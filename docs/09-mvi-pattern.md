@@ -1,4 +1,4 @@
-# 07 · MVI Pattern
+# 09 · MVI Pattern
 
 > **Pattern:** Model-View-Intent · strict unidirectional data flow
 > **Scope:** Every screen in `:features` and `:features-chatbot`
@@ -12,9 +12,9 @@ Each screen defines three sealed types. Together they describe the screen's enti
 
 | Role | Direction | Cardinality | Lifetime | Mechanism |
 |---|---|---|---|---|
-| **`UiState`** | ViewModel → View | Always one current value | Cold-start to screen disposal | `StateFlow<UiState>` |
+| **`UiState`** | ViewModel → View | Always one current value | Cold-start to screen disposal | `StateFlow<S>` |
 | **`UiEvent`** | View → ViewModel | Many over time | Each user interaction | Function call: `onEvent(...)` |
-| **`UiEffect`** | ViewModel → View | Many one-shot deliveries | Per emission | `SharedFlow<UiEffect>` |
+| **`UiEffect`** | ViewModel → View | Many one-shot deliveries | Per emission | `SharedFlow<F>` |
 
 The three rules that make MVI strict:
 
@@ -72,6 +72,7 @@ internal data class TransferInputState(
     val beneficiaryName: String? = null,
     val feeQuote: FeeQuote? = null,
     val validation: ValidationState = ValidationState.Idle,
+    val showQrScanner: Boolean = false,        // gated on VariantCapabilities at init
     val isSubmitting: Boolean = false,
 ) : UiState
 
@@ -95,10 +96,11 @@ internal sealed interface TransferInputEffect : UiEffect {
 ```kotlin
 @HiltViewModel
 internal class TransferInputViewModel @Inject constructor(
-    private val transferRepo: TransferRepository,        // :core interface
-    private val amountPolicy: TransferAmountPolicy,      // :core interface
+    private val transferRepo: TransferRepository,        // :core interface, impl from :data
+    private val amountPolicy: TransferAmountPolicy,      // :core interface, impl from :variants-*
+    capabilities: VariantCapabilities,                   // :core interface, impl from :variants-*
 ) : MviViewModel<TransferInputState, TransferInputEvent, TransferInputEffect>(
-    initial = TransferInputState()
+    initial = TransferInputState(showQrScanner = capabilities.supportsKhqrScan()),
 ) {
 
     override fun onEvent(event: TransferInputEvent) = when (event) {
@@ -127,9 +129,10 @@ internal class TransferInputViewModel @Inject constructor(
 
 The ViewModel:
 
-- Holds **only `:core` interfaces** as dependencies. Never a concrete tenant class.
+- Holds **only `:core` interfaces** as dependencies. Never a concrete `:data` repo or `:variants-*` policy class.
 - Uses `setState { … }` for state changes; `emitEffect(…)` for one-shot side effects.
 - Returns `Unit` from `onEvent` via the exhaustive `when` — each event maps to exactly one branch.
+- Reads variant capabilities at construction and stores derived booleans in `UiState` — the rendered Composable never sees `VariantCapabilities` directly.
 
 ---
 
@@ -165,6 +168,7 @@ private fun TransferInputContent(
     onEvent: (TransferInputEvent) -> Unit,
 ) {
     // Pure rendering of state. Composable-preview-friendly.
+    if (state.showQrScanner) QrScannerButton(onClick = { /* ... */ })
 }
 ```
 
@@ -183,7 +187,8 @@ Splitting `Screen` (stateful) from `Content` (stateless) gives:
 | What's currently shown on screen | One-shot navigation commands |
 | Form input values | Toast/snackbar messages already shown |
 | Loading/empty/error indicators | `Throwable` instances |
-| Selected items, expanded sections | Concrete `:tenants:*` types |
+| Capability-derived booleans (e.g. `showQrScanner`) | Concrete `:variants-*` types |
+| Selected items, expanded sections | The `VariantId` (UI never branches on it) |
 | Cached data being displayed | Live `Flow`s — collect them into state instead |
 
 If state would change "the same way" twice in a row and you'd want both events delivered, it's an **effect**, not state. Errors are the canonical example: showing the same error twice should produce two snackbars, not one suppressed change.
@@ -204,5 +209,5 @@ The cost — boilerplate per screen — is mitigated by the `MviViewModel` base 
 ## 8. Cross-references
 
 - Where the base contracts live: [03 — `:core`](03-core.md) (`mvi/` package)
-- Concrete end-to-end example using these contracts: [10 — Contract Walkthrough](10-contract-implementation-example.md)
-- How state is cleared on tenant switch: [08 — Runtime Tenant Switching](08-runtime-tenant-switching.md)
+- How state is cleared on logout: [10 — Boot Phases](10-boot-phases.md)
+- The `:core` policy interfaces ViewModels inject: [03](03-core.md) and [07](07-variants.md)

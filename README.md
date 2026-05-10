@@ -1,10 +1,10 @@
-# The Nexus Framework
+# The Compass Framework
 
-> **Codename:** Nexus · **Domain:** Multi-tenant fintech (Android) · **Role:** Lead Android Architect & Systems Engineer
+> **Codename:** Compass · **Domain:** Multi-region fintech (Android) · **Status:** Architecture spec (design phase)
 
-A high-stakes, multi-tenant banking architecture engineered to eliminate **Conditional Logic Sprawl** through a **dual-core system**, **interface-driven development**, and **runtime dependency injection**.
+A multi-region Android banking architecture where the variant (region/company) is selected once at login, the configuration is fetched once from MG at boot, and the front-end stays Logic-Blind across all variants — without ever writing `if (variantId == "BankA")`.
 
-The codebase services many tenants — different banks, different markets, different rails (KHQR, Napas, PPCBank legacy) — from a single binary, without ever writing `if (tenant == "BankA")`.
+The codebase services many regions and companies from a single binary, with the unified server-side fintech API handling backend routing per user. The Android side never knows which bank a user belongs to in order to talk to the backend.
 
 ---
 
@@ -12,9 +12,9 @@ The codebase services many tenants — different banks, different markets, diffe
 
 | | |
 |---|---|
-| **Problem** | One Android app must serve N banks across M markets, each with unique APIs, validation rules, and regulatory constraints — without `if`/`when` chains, code duplication, or cross-contamination of logic. |
-| **Solution** | Separate **infrastructure** (`:aos-core`), **contracts** (`:core`), **UI** (`:features`), and **logic** (`:tenants:*`) into a strict dependency DAG. Wire the right tenant implementation at runtime via Hilt. Swap the entire DI graph without restarting the app. |
-| **Non-negotiables** | Zero conditional sprawl · Linear build performance · Tenant logic isolation · Hot DI swap with memory purge |
+| **Problem** | One Android app must serve N companies across M regions, each with unique business rules and regulatory constraints — without `if`/`when` chains, code duplication, or cross-contamination of logic. |
+| **Solution** | Separate **infrastructure** (`:aos-core`), **contracts** (`:core`), **UI primitives** (`:design-system`), **shared data** (`:data`), **UI** (`:features`), and **variant policies** (`:variants-*`) into a strict dependency DAG. Resolve URLs from MG at boot. Bind variant policies once at login. Tear it down on logout — no runtime swap. |
+| **Non-negotiables** | Zero conditional sprawl · Linear build performance · Variant policy isolation · Boot-time URL discovery · Single APK |
 
 ---
 
@@ -23,7 +23,7 @@ The codebase services many tenants — different banks, different markets, diffe
 ### Foundations
 | Doc | Purpose |
 |---|---|
-| [00 — Overview](docs/00-overview.md) | Vision, the Conditional Logic Sprawl problem, dual-core principle |
+| [00 — Overview](docs/00-overview.md) | Vision, the Conditional Logic Sprawl problem, the solution shape |
 | [01 — Module Topology](docs/01-module-topology.md) | All modules, dependency rules, forbidden imports |
 
 ### Per-Module Specs
@@ -31,25 +31,28 @@ The codebase services many tenants — different banks, different markets, diffe
 |---|---|---|
 | [02 — `:aos-core`](docs/02-aos-core.md) | Submodule | Infrastructure |
 | [03 — `:core`](docs/03-core.md) | Local | Domain & Contracts |
-| [04 — `:features`](docs/04-features.md) | Local | UI Engine (Hybrid-Monolith) |
-| [05 — `:tenants:*`](docs/05-tenants.md) | Local | Logic Silos |
-| [06 — `:app`](docs/06-app-orchestrator.md) | Local | Orchestrator / DI Glue |
+| [04 — `:design-system`](docs/04-design-system.md) | Local | UI primitives (theme + components) |
+| [05 — `:data`](docs/05-data.md) | Local | Data layer (FintechApi + repos) |
+| [06 — `:features`](docs/06-features.md) | Local | UI Engine (Hybrid-Monolith) |
+| [07 — `:variants-*`](docs/07-variants.md) | Local | Variant Silos (policies + DI) |
+| [08 — `:app`](docs/08-app-orchestrator.md) | Local | Orchestrator / Boot |
 
 ### Strategic Mechanisms
 | Doc | Topic |
 |---|---|
-| [07 — MVI Pattern](docs/07-mvi-pattern.md) | UiState · UiEvent · UiEffect conventions |
-| [08 — Runtime Tenant Switching](docs/08-runtime-tenant-switching.md) | DI swap + memory purge + session clear |
-| [09 — Environment Configuration](docs/09-environment-configuration.md) | Debug server picker + EnvironmentInterceptor |
+| [09 — MVI Pattern](docs/09-mvi-pattern.md) | UiState · UiEvent · UiEffect conventions |
+| [10 — Boot Phases](docs/10-boot-phases.md) | MG → gate → login → SessionGraph build → logout |
+| [11 — MG and Runtime Config](docs/11-mg-and-runtime-config.md) | Service-discovery endpoint, maintenance/force-update gating |
+| [12 — Departments and Session](docs/12-departments-and-session.md) | Multi-account session, account switcher |
 
 ### Deliverables
 | Doc | Topic |
 |---|---|
-| [10 — Contract→Implementation Walkthrough](docs/10-contract-implementation-example.md) | ViewModel ↔ `:core` contract ↔ `:tenants:kh` impl |
-| [11 — Onboarding a New Tenant](docs/11-onboarding-new-tenant.md) | Step-by-step: adding `tenants-my` with zero `:features` changes |
-| [12 — Build Performance](docs/12-build-performance.md) | Linear build strategy, why Hybrid-Monolith |
-| [13 — Tech Stack](docs/13-tech-stack.md) | Quick reference card |
-| [14 — Glossary](docs/14-glossary.md) | Logic-Blind, Hybrid-Monolith, Logic Silo, TenantContext, etc. |
+| [13 — Onboarding a Variant](docs/13-onboarding-a-variant.md) | Step-by-step: adding `variants-my` with zero `:features` / `:data` changes |
+| [14 — Build Performance](docs/14-build-performance.md) | Linear build strategy, why Hybrid-Monolith |
+| [15 — Tech Stack](docs/15-tech-stack.md) | Quick reference card |
+| [16 — Glossary](docs/16-glossary.md) | Logic-Blind, Hybrid-Monolith, Variant Silo, MG, RuntimeConfig, etc. |
+| [17 — Project Structure](docs/17-project-structure.md) | Single-page tree of every module's directory layout |
 
 ---
 
@@ -58,23 +61,27 @@ The codebase services many tenants — different banks, different markets, diffe
 ```
 root/
 ├── aos-core/        (Submodule)   Infrastructure: Network · Security · Storage · Logging
-├── core/            (Local)       Domain: Repository Interfaces · Models · TenantContext · MVI base
+├── core/            (Local)       Domain: Repository/Policy interfaces · Models · RuntimeConfig · Session · MVI base
+├── design-system/   (Local)       Theme tokens · CompassButton/TextField/… · Compose modifiers
+├── data/            (Local)       FintechApi (Retrofit) + *Repo implementations
 │
 ├── features/        (UI Engine)   Logic-Blind Compose screens & ViewModels
+│   ├── boot/                      Package: Cold-start, MaintenanceGate
 │   ├── auth/                      Package: Login · Registration · OTP
 │   ├── transfer/                  Package: P2P · QR · Review
-│   ├── splash/                    Package: Cold-start gate
-│   └── common/                    Package: Theme · Design system
+│   └── account/                   Package: Balances · History · Account switcher
 │
 ├── features-chatbot/              Isolated module (heavy SDKs)
+├── features-{variant-feature}/    Variant-locked features (e.g. features-bakong-disputes)
 │
-├── tenants/         (Logic Silos)
-│   ├── tenants-kh/                Cambodia · Bakong · KHQR
-│   ├── tenants-vn/                Vietnam · Napas
-│   └── tenants-ppcbank/           PPCBank legacy override
+├── variants-kh/                   Cambodia: KhTransferAmountPolicy + KhFeeCalculator + KhCapabilities + DI
+├── variants-vn/                   Vietnam: policies + DI
+├── variants-ppcbank/              PPCBank legacy: policies + DI
 │
-└── app/             (Orchestrator) Application · DI registry · Runtime tenant switcher
+└── app/             (Orchestrator) Application · BootCoordinator · LoggedInComponent
 ```
+
+For the full directory layout of each module, see [17 — Project Structure](docs/17-project-structure.md).
 
 ---
 
@@ -84,8 +91,8 @@ If you're new to the framework, read in this order:
 
 1. **[Overview](docs/00-overview.md)** — understand the problem before the solution.
 2. **[Module Topology](docs/01-module-topology.md)** — see the dependency DAG.
-3. **[Contract Walkthrough](docs/10-contract-implementation-example.md)** — concrete example of how a request flows through the layers.
-4. **[Runtime Switching](docs/08-runtime-tenant-switching.md)** — the highest-leverage mechanism.
-5. **[Onboarding a New Tenant](docs/11-onboarding-new-tenant.md)** — the system's promise, made operational.
+3. **[Boot Phases](docs/10-boot-phases.md)** — the highest-leverage mechanism.
+4. **[MG and Runtime Config](docs/11-mg-and-runtime-config.md)** — what the binary contains and what it doesn't.
+5. **[Onboarding a Variant](docs/13-onboarding-a-variant.md)** — the system's promise, made operational.
 
 Everything else is reference.
