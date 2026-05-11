@@ -112,7 +112,7 @@ Compile-time enforced.
 ```
   Submit tap
      ↓
-  TransferInputViewModel
+  TransferInputViewModel                       ← no use case in between
      policy.validate(amount)        ← KhTransferAmountPolicy   from :variants-kh
      repo.submit(intent)
      ↓
@@ -127,6 +127,120 @@ Compile-time enforced.
 ```
 
 UI didn't know KH. Repo didn't know KH. The server figured it out from auth.
+
+---
+
+## No `:domain` module · no use cases
+
+```
+   Common "Clean Architecture"            Compass
+   ───────────────────────────            ─────────────────────────────
+        :app                                  :app
+         ↑                                     ↑
+    :presentation     UI + VM             :features         UI + VM
+         ↑                                     ↑
+      :domain       use cases             :core          contracts + models
+         ↑          + interfaces            ↑     ↑
+       :data       repo impls          :data    :variants-*
+                                       (impls)  (policies — variability)
+```
+
+`:core` already plays the "domain contracts" role. The variability that use cases would carry lives in `:variants-*/policy/`. The orchestration that use cases would perform happens in the ViewModel — typically 5–15 lines.
+
+### Side-by-side: same flow, two designs
+
+```kotlin
+// ❌ With a use case layer
+class SubmitTransferUseCase @Inject constructor(
+    private val policy: TransferAmountPolicy,
+    private val repo:   TransferRepository,
+) {
+    suspend operator fun invoke(intent: TransferIntent): Result<TransferReceipt> =
+        when (val v = policy.validate(intent.amount)) {
+            is ValidationResult.Invalid -> Result.failure(ValidationException(v.reason))
+            ValidationResult.Valid      -> repo.submit(intent)
+        }
+}
+
+class TransferInputViewModel @Inject constructor(
+    private val submit: SubmitTransferUseCase,           // hides policy + repo behind a wrapper
+) : MviViewModel<…>() { … }
+```
+
+```kotlin
+// ✅ Compass — VM composes policy + repo directly
+class TransferInputViewModel @Inject constructor(
+    private val policy: TransferAmountPolicy,
+    private val repo:   TransferRepository,
+) : MviViewModel<…>() {
+    private fun onSubmit() = viewModelScope.launch {
+        when (val v = policy.validate(state.value.amount)) {
+            is ValidationResult.Invalid -> setState { copy(error = v.reason) }
+            ValidationResult.Valid      -> repo.submit(state.value.intent).fold(…)
+        }
+    }
+}
+```
+
+### What a use case layer would buy us — and where we already get it
+
+| Promised benefit | Compass already provides it via |
+|---|---|
+| Reusable business rules across screens | **Policies** — injectable wherever needed |
+| Variant-specific behavior | **`:variants-{id}`** — one policy impl set per variant |
+| Pure JVM-testable logic, no fixtures | **Policies** — no Android, no Hilt |
+| ViewModel kept thin | Rules live in policies; VM only orchestrates |
+| UI insulated from impls | **`:core` interfaces** — `:features` never names a `:data` or `:variants-*` class |
+| I/O decoupled from rules | **Repository** (I/O) vs **Policy** (rules) — already the split |
+
+### Cost of adding the layer anyway
+
+```
+                      use cases                       policies
+                      ─────────                       ────────
+classes scale by      ACTIONS × variants              ~10 RULE TYPES × variants
+                      (Submit, Resolve, Verify, …)    (Amount, Fee, Capability, …)
+
+reuse pattern         per-screen wrappers             cross-screen, by interface
+
+new test surface      no — wraps already-pure pieces  —
+
+new flexibility       no — variability is in the      —
+                      interface, not the wrapper
+```
+
+### Rule of thumb — where new behavior lands
+
+| Variability lives in… | Goes in… |
+|---|---|
+| Business rule (limit, fee, format, regex) | **`:core/policy/`** interface → variant impl |
+| Capability toggle | **`VariantCapabilities`** → variant returns bool |
+| I/O | **`:core/repository/`** interface → `:data` impl |
+| Multi-step orchestration (validate → submit → emit) | **ViewModel** |
+
+### Does the framework require a use case? — No.
+
+A use case is a wrapper around `policy.validate(…)` + `repo.submit(…)`. In Compass:
+
+- `policy` is **already** the seam where variability plugs in
+- `repo` is **already** the seam where I/O plugs in
+- the ViewModel composes both — directly
+
+A `SubmitTransferUseCase` would add a class to maintain, multiply by `N actions × M variants` for anything variant-touching, and yield **zero new flexibility** (the variant strategy already substitutes behavior at login via Hilt multibindings — see [`docs/07-variants.md` § 6](docs/07-variants.md)).
+
+If a multi-step flow ever genuinely needs reuse across screens (e.g. a 4-step KYC verification used by 3 different features), it gets factored into a `:core` interface + a `:data` impl — same shape as a repository, not a new layer. **Lift to a new policy/repo interface when shared; don't pre-emptively wrap every action.**
+
+### For iOS readers
+
+| iOS pattern | Compass equivalent |
+|---|---|
+| VIPER **Interactor** / Clean Swift **Worker** | Split into **Repository** (I/O) + **Policy** (rules); VM composes both |
+| **Use Case** per action | No equivalent — orchestration is ~5 lines in the VM |
+| `Wireframe` / `Router` | Compose `NavController` + per-feature `*Navigator.kt` |
+| `Presenter` | `MviViewModel<S, E, F>` — `UiState` / `UiEvent` / `UiEffect` |
+| Per-region build targets / schemes | One binary; variant policies bound at login |
+
+Mental model: **VIPER without the Interactor.** Repository + Policy fill that role; the ViewModel (= Presenter) calls both directly.
 
 ---
 
@@ -148,6 +262,8 @@ UI didn't know KH. Repo didn't know KH. The server figured it out from auth.
 | What about per-bank branding (logos, colors)? | Future-roadmap. Branding is intentionally **not** in `RuntimeConfig`; per-variant theming is a separate mechanism. |
 | What if our next project isn't multi-tenant? | Drop `:variants-{id}`. Everything else (`:aos-core`, `:core`, `:design-system`, `:data`, `:features`, MG, `LoggedInComponent`) is reusable as a clean modular Android stack. |
 | What if a variant grows to need its own UI/API/screens? | Goes in a sibling module: `:features-{feature-name}` (e.g. `:features-bakong-disputes`), gated by a `VariantCapabilities` flag. The variant module stays pure. |
+| Where do use cases / interactors live? | **There are none.** ViewModel composes a `:core` policy + a `:core` repository directly. See "No `:domain` module · no use cases" above. |
+| Why no separate `:domain` module? | `:core` already owns contracts + models. Variability lives in `:variants-*/policy/`. Splitting it across two modules buys no new isolation. |
 
 ---
 
