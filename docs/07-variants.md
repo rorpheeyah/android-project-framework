@@ -226,9 +226,9 @@ internal class KhBusinessCalendar : BusinessCalendar {
 }
 ```
 
-### 5.6 `ReceiptRenderer` (when applicable)
+### 5.6 `ReceiptRenderer`
 
-Variants in bilingual markets often need receipts in both languages. The interface returns a structured rendered receipt that the UI then displays or shares.
+Receipts are the variant difference most users actually see. Each regulator mandates a different set of fields, a different consumer disclosure, and sometimes a different language — but the input (a finalised transfer) is identical everywhere. The renderer converts a variant-agnostic `TransferReceipt` into a variant-shaped `RenderedReceipt` that the UI walks line by line.
 
 ```kotlin
 // :core/policy/ReceiptRenderer.kt
@@ -236,14 +236,120 @@ interface ReceiptRenderer {
     fun render(receipt: TransferReceipt, primaryLanguage: String): RenderedReceipt
 }
 
+// :core/model/TransferReceipt.kt — same shape for every variant
+data class TransferReceipt(
+    val id: TransferId,
+    val amount: Money,
+    val senderName: String,
+    val senderAccount: String,         // already masked by :data
+    val recipientName: String,
+    val recipientAccount: String,
+    val timestamp: Instant,
+    val reference: String,
+    val fee: Money,
+    val channel: TransferChannel,
+)
+
+// :core/model/RenderedReceipt.kt — variant-shaped output
+data class RenderedReceipt(
+    val title: String,
+    val lines: List<ReceiptLine>,
+    val footer: String?,
+    val regulatoryDisclosure: String?,
+)
+
+data class ReceiptLine(val label: String, val value: String)
+```
+
+The output is intentionally a flat list of label/value rows plus an optional disclosure. The UI cannot branch on field meaning because the rendered shape carries no semantics beyond "show these in order" — which is exactly what keeps `:features` Logic-Blind.
+
+**KH — bilingual KH + EN, NBC-mandated disclosure**
+
+```kotlin
 // :variants-kh/policy/KhReceiptRenderer.kt
-internal class KhReceiptRenderer : ReceiptRenderer {
-    override fun render(receipt: TransferReceipt, primaryLanguage: String): RenderedReceipt {
-        // Bilingual KH + EN receipt with NBC-mandated fields
-        return RenderedReceipt(/* ... */)
+internal class KhReceiptRenderer @Inject constructor(
+    private val formatter: AmountFormatter,         // resolves to KhrAmountFormatter
+) : ReceiptRenderer {
+
+    override fun render(r: TransferReceipt, primaryLanguage: String): RenderedReceipt {
+        val s = if (primaryLanguage == "km") KmStrings else EnStrings
+        val lines = listOf(
+            ReceiptLine(s.amount,    formatter.format(r.amount)),
+            ReceiptLine(s.sender,    r.senderName),
+            ReceiptLine(s.recipient, r.recipientName),
+            ReceiptLine(s.reference, r.reference),
+            ReceiptLine(s.timestamp, r.timestamp.format(KhDateTimeFormatter)),
+            ReceiptLine(s.fee,       formatter.format(r.fee)),
+        )
+        return RenderedReceipt(
+            title = s.title,
+            lines = lines,
+            footer = s.thankYou,
+            regulatoryDisclosure = s.nbcDisclosure,    // shown smaller below the rows
+        )
+    }
+
+    private object EnStrings { /* "Amount", "Sender", … "Authorised under NBC Prakas …" */ }
+    private object KmStrings { /* "ចំនួនទឹកប្រាក់", "អ្នកផ្ញើ", … */ }
+}
+```
+
+**VN — single-language, SBV-aligned, extra settlement reference**
+
+```kotlin
+// :variants-vn/policy/VnReceiptRenderer.kt
+internal class VnReceiptRenderer @Inject constructor(
+    private val formatter: AmountFormatter,            // resolves to VndAmountFormatter
+    private val napasLookup: NapasSettlementLookup,    // variant-internal helper, not in :core
+) : ReceiptRenderer {
+
+    override fun render(r: TransferReceipt, primaryLanguage: String): RenderedReceipt {
+        val napasId = napasLookup.idFor(r.id)          // SBV requires the NAPAS ref on the receipt
+        val lines = listOf(
+            ReceiptLine("Số tiền",      formatter.format(r.amount)),
+            ReceiptLine("Người gửi",    r.senderName),
+            ReceiptLine("Người nhận",   r.recipientName),
+            ReceiptLine("Mã giao dịch", r.reference),
+            ReceiptLine("Mã NAPAS",     napasId),       // no equivalent row on KH receipts
+            ReceiptLine("Thời gian",    r.timestamp.format(VnDateTimeFormatter)),
+            ReceiptLine("Phí",          formatter.format(r.fee)),
+        )
+        return RenderedReceipt(
+            title = "Biên lai giao dịch",
+            lines = lines,
+            footer = "Cảm ơn quý khách đã sử dụng Compass.",
+            regulatoryDisclosure = "Được giám sát bởi NHNN. Lưu biên lai để đối chiếu.",
+        )
     }
 }
 ```
+
+What differs between the two implementations:
+
+- **Languages** — KH swaps an entire string table at runtime; VN is single-language.
+- **Line set** — VN inserts a `Mã NAPAS` row sourced from a country-specific lookup that doesn't exist in `:variants-kh`.
+- **Internal dependencies** — VN injects `NapasSettlementLookup`, an `internal` class living inside `:variants-vn`. KH has no equivalent. Variants are free to keep their own helpers; only the Hilt module is exposed (see §2).
+- **Disclosure text** — different regulator, different statute, different language.
+
+What stays identical: the interface, the `TransferReceipt` input, the `RenderedReceipt` output shape, and the Hilt binding pattern in §6.2.
+
+**The UI consumer — same file for every variant**
+
+```kotlin
+// :features/transfer/TransferReceiptScreen.kt
+@Composable
+fun TransferReceiptScreen(vm: TransferReceiptViewModel = hiltViewModel()) {
+    val rendered = vm.state.collectAsState().value.rendered ?: return
+    Column {
+        CompassReceiptHeader(rendered.title)
+        rendered.lines.forEach { CompassReceiptRow(it.label, it.value) }
+        rendered.footer?.let { CompassReceiptFooter(it) }
+        rendered.regulatoryDisclosure?.let { CompassDisclosure(it) }
+    }
+}
+```
+
+The screen walks the rendered list. It doesn't know — and cannot know — which fields the active variant produced or whether the disclosure cites NBC or NHNN. Onboard a new market and this file does not change.
 
 ### 5.7 Adding a new variant surface
 
