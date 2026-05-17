@@ -31,10 +31,14 @@
 
 | Type | Kind | Responsibility |
 |---|---|---|
-| `VariantContext` | data class | Snapshot describing the active variant: `id`, `displayName`, `marketCode`, `defaultCurrency`. Resolved once at login; immutable for the session. |
+| `VariantContext` | data class | Snapshot describing the active variant (region/regulator): `id`, `displayName`, `marketCode`, `defaultCurrency`. Resolved once at login; immutable for the session. |
 | `VariantId` | value class | Type-safe wrapper around the variant identifier string. |
+| `TenantContext` | data class | Snapshot describing the active tenant (customer-org inside a variant): `id`, `displayName`, `flags: TenantFlags`, `params: TenantParams`. Resolved once at login from `LoginResponse`; immutable for the session. |
+| `TenantId` | value class | Type-safe wrapper around the tenant identifier string. |
+| `TenantFlags` | data class | Named boolean fields the server sets per tenant (`hidesEmployeeId`, `clearsEmployeeNumberOnApproval`, …). Client owns the schema; server owns the values. |
+| `TenantParams` | data class | Named typed fields the server sets per tenant (`employeeIdRegex`, `approvalLineMaxDepth`, …). Same client-schema / server-values contract as `TenantFlags`. |
 
-> The variant cannot change inside a session — `VariantContext` is a constructor-time value passed into `LoggedInComponent`. There is no `currentVariant: StateFlow<…>` and no provider interface that could re-emit.
+> Neither variant nor tenant can change inside a session — both are constructor-time values passed into `LoggedInComponent`. There is no `currentVariant: StateFlow<…>` / `currentTenant: StateFlow<…>` and no provider interface that could re-emit. See [19 — Tenants and Variants](19-tenants-and-variants.md) for the full distinction between the two axes.
 
 ### 2.2 `runtime/`
 
@@ -190,14 +194,16 @@ Every PR that touches `:core` must list which downstream modules need follow-up 
 ## 5. Public Surface
 
 ```
-com.compass.core.variant        ← VariantContext, VariantId
-com.compass.core.runtime        ← RuntimeConfig, ApiUrls, MaintenanceState, ForceUpdate
+com.compass.core.variant        ← VariantContext, VariantId,
+                                  TenantContext, TenantId, TenantFlags, TenantParams
+com.compass.core.runtime        ← RuntimeConfig, ApiUrls, MaintenanceState, ForceUpdate,
+                                  StoreReviewMode
 com.compass.core.session        ← Session, DepartmentAccount, AccountId
 com.compass.core.repository     ← *Repository interfaces
 com.compass.core.policy         ← *Policy interfaces, VariantCapabilities, AmountFormatter
 com.compass.core.model          ← Money, UserSession, LoginResponse, Beneficiary, …
 com.compass.core.mvi            ← UiState, UiEvent, UiEffect, MviViewModel
-com.compass.core.scope          ← @LoggedInScoped
+com.compass.core.scope          ← @LoggedInScoped, @VariantKey, @TenantKey
 ```
 
 There are no `internal` types in `:core` worth mentioning — almost everything is part of the public surface, by design. That's what makes it a contract layer.
@@ -209,5 +215,6 @@ There are no `internal` types in `:core` worth mentioning — almost everything 
 - How `:features` consumes these contracts: [06 — `:features`](06-features.md)
 - How `:data` implements the repository contracts: [05 — `:data`](05-data.md)
 - How `:variants-*` implements the policy contracts: [07 — `:variants-*`](07-variants.md)
+- The tenant axis (`TenantContext` / `TenantFlags` / `TenantParams` and when to introduce a structural `TenantPolicy`): [19 — Tenants and Variants](19-tenants-and-variants.md)
 - The `LoggedInComponent` that scopes most of these instances: [10 — Boot Phases](10-boot-phases.md)
 - MVI base usage details: [09 — MVI Pattern](09-mvi-pattern.md)

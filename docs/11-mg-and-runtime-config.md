@@ -25,6 +25,10 @@ The binary contains exactly one URL (the MG URL per build environment). MG retur
   "forceUpdate": {
     "minimumVersionCode": 240,
     "storeUrl":           "market://details?id=bank.compass.app"
+  },
+  "storeReviewMode": {
+    "enabled":           false,
+    "reviewVersionCode": 245
   }
 }
 ```
@@ -36,6 +40,7 @@ data class RuntimeConfig(
     val urls: ApiUrls,
     val maintenance: MaintenanceState,
     val forceUpdate: ForceUpdate,
+    val storeReviewMode: StoreReviewMode,
 )
 
 data class ApiUrls(
@@ -51,6 +56,11 @@ sealed interface MaintenanceState {
 data class ForceUpdate(
     val minimumVersionCode: Int,
     val storeUrl: String,
+)
+
+data class StoreReviewMode(
+    val enabled: Boolean,         // server-side decision: is this user a Play Store reviewer?
+    val reviewVersionCode: Int,   // version code currently in store review / phased rollout
 )
 ```
 
@@ -202,6 +212,58 @@ enum class Environment(val mgUrl: String) {
 Selection persists in plain `SharedPreferences` (not encrypted — this is debug-only) and is read by `MgClient` *before* `BuildConfig.MG_URL` if present. Changing the override **requires a process restart** — the override is read once at cold start.
 
 In `release` builds, this code is not compiled in. `BuildConfig.DEBUG` gating ensures the production binary cannot expose the picker.
+
+---
+
+## 6.5 Store Review Mode
+
+Some features must ship in a build that's already on the Play Console review track but stay invisible to production users until rollout completes. The `storeReviewMode` field in `RuntimeConfig` handles this without a parallel feature-flag system.
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Server-side bit: did MG identify this user as a Play Store reviewer? Decided by device fingerprint, registered tester email, signing-key heuristic, or whatever identifier the backend trusts. |
+| `reviewVersionCode` | The version code currently going through store review. Features tagged with `>= reviewVersionCode` are visible to reviewers; everyone else stays on the prior surface. |
+
+### Gating pattern
+
+```kotlin
+// :features/<feature>/SomeViewModel.kt
+class SomeViewModel @Inject constructor(
+    private val runtimeConfig: RuntimeConfigStore,
+    private val capabilities: VariantCapabilities,
+) : MviViewModel<…>() {
+
+    private val srm           = runtimeConfig.current().storeReviewMode
+    private val isReviewer    = srm.enabled
+    private val isReviewBuild = BuildConfig.VERSION_CODE >= srm.reviewVersionCode
+
+    // Feature ships in this binary but is review-only until GA:
+    private val showReviewOnlyFeature: Boolean =
+        capabilities.supportsNewFeature() && isReviewer && isReviewBuild
+}
+```
+
+Two states the gate covers:
+
+| Phase | `enabled` | `VERSION_CODE` vs `reviewVersionCode` | Result |
+|---|---|---|---|
+| Production users on old version | (irrelevant) | `<` | Feature absent from binary anyway |
+| Production users on new version, pre-rollout | `false` | `≥` | Hidden — they don't see it yet |
+| Play Store reviewers on new version | `true` | `≥` | Visible — review can proceed |
+| Post-GA | `true` for all | `≥` | Visible — or just remove the gate in code |
+
+After GA, MG flips `enabled = true` for the production segment (or the code-side gate is deleted entirely). The version-code check guarantees the gate is meaningful only on builds that actually contain the feature — a user on the old version cannot accidentally trigger code paths that don't exist.
+
+### What `storeReviewMode` is NOT
+
+| ❌ Not the place for | ✅ Goes elsewhere |
+|---|---|
+| General feature flags (toggle existing features for A/B) | Firebase Remote Config or similar |
+| Per-variant capability gating | `VariantCapabilities` in `:core/policy/` |
+| Tenant-specific permission gating | Server-returned permission set on `Session` |
+| Hiding bugs in production | Fix the bug |
+
+`storeReviewMode` is narrow on purpose: one bit, one version code, one mechanism, owned by MG.
 
 ---
 

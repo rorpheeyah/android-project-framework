@@ -813,6 +813,7 @@ Treat `:features-chatbot` as the prototype for **"isolate when SDK weight justif
 
 ## 12. Cross-references
 
+- Variants vs **tenants** (customer-org boundaries *inside* a variant): [19 — Tenants and Variants](19-tenants-and-variants.md)
 - The interfaces variants implement: [03 — `:core`](03-core.md)
 - The repos that handle the API side (variant-agnostic): [05 — `:data`](05-data.md)
 - The shared design system that variant-unique features consume: [04 — `:design-system`](04-design-system.md)

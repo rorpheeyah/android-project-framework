@@ -53,6 +53,8 @@ The codebase services many regions and companies from a single binary, with the 
 | [15 — Tech Stack](docs/15-tech-stack.md) | Quick reference card |
 | [16 — Glossary](docs/16-glossary.md) | Logic-Blind, Hybrid-Monolith, Variant Silo, MG, RuntimeConfig, etc. |
 | [17 — Project Structure](docs/17-project-structure.md) | Single-page tree of every module's directory layout |
+| [18 — WebView Integration](docs/18-webview-integration.md) | WebView primitives, JS bridge contract, URL allowlist, cookie/session sync |
+| [19 — Tenants and Variants](docs/19-tenants-and-variants.md) | The two axes: regulator-boundary (variant) vs customer-org boundary (tenant); `TenantContext`, flags/params, structural escalation |
 
 ---
 

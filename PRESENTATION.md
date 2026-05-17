@@ -230,6 +230,20 @@ A `SubmitTransferUseCase` would add a class to maintain, multiply by `N actions 
 
 If a multi-step flow ever genuinely needs reuse across screens (e.g. a 4-step KYC verification used by 3 different features), it gets factored into a `:core` interface + a `:data` impl — same shape as a repository, not a new layer. **Lift to a new policy/repo interface when shared; don't pre-emptively wrap every action.**
 
+### "But Logic-Blind would forbid a use case inside `:features` too, right?"
+
+Right. Logic-Blind isn't just "no concrete-impl imports" — it's "**no business logic in `:features`**." Variability lives in **policies**, I/O lives in **repositories**, the VM only sequences them. A `*UseCase` class inside `:features` is a *new seam in the UI layer* — exactly what Logic-Blind prevents.
+
+So if the same orchestration shows up in ≥ 3 VMs, none of the answers is "add a use case." They are:
+
+| Shape of the duplication | Where it goes |
+|---|---|
+| Domain-level — validate → submit → etc. | **New `:core` interface** (policy or repository) → impl in `:variants-*` or `:data` |
+| UI-level — multi-screen flow state, navigation, error→effect mapping | **Feature-local helper** — `*FlowState.kt`, `*Navigator.kt`, or a top-level fn in the feature package |
+| Short orchestration (≲ 10 lines) | **Inline in the VM** — recheck whether the "duplication" is actually shared semantics |
+
+None of these is named `*UseCase`. The word stays out of the codebase on purpose — it carries Clean-Architecture defaults ("one per action") that drag the team back toward the layer this section argues against.
+
 ### For iOS readers
 
 | iOS pattern | Compass equivalent |

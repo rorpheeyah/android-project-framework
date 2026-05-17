@@ -52,7 +52,7 @@ An **isolated feature module**, sibling to `:features`. Kept separate because ch
 
 ### `:variants-{id}`
 
-The **variant module**. One per company or region: `:variants-kh`, `:variants-vn`, etc. Houses variant-specific policies (validation, fees, formatting) and capability flags. **Does not** own UI, Retrofit, DTOs, or repositories.
+The **variant module**. One per region/regulator: `:variants-kh`, `:variants-vn`, `:variants-kr`, etc. Houses variant-specific policies (validation, fees, formatting) and capability flags. Per-customer-organization differences inside a region are modeled as [Tenant]s living under `:variants-{region}/tenants/`. **Does not** own UI, Retrofit, DTOs, or repositories.
 
 → [07 — `:variants-*`](07-variants.md)
 
@@ -202,6 +202,44 @@ The logged-in user's session state, held inside `LoggedInComponent`. Owns the `U
 
 ---
 
+### Tenant
+
+A customer-organization identity that lives **inside** a [Variant]. Captures per-org differences that do not change the regulator or rails — typically field visibility, label text, employee-ID format, approval-line shape. Captured at login as a `TenantContext`; immutable for the session. Every variant ships a `default` tenant.
+
+→ [19 — Tenants and Variants](19-tenants-and-variants.md)
+
+---
+
+### `TenantContext`
+
+Snapshot type in `:core/variant/` describing the active tenant: `id`, `displayName`, plus `flags: TenantFlags` and `params: TenantParams`. Resolved once at login from `LoginResponse`. Read by `:features` for **display and parametric gating only** — never `tenant.id` for dispatch.
+
+---
+
+### `TenantFlags`
+
+Data class in `:core/variant/` carrying named boolean fields the server sets per tenant (`hidesEmployeeId`, `clearsEmployeeNumberOnApproval`, …). The client owns the field schema; the server owns the values. New flag = `:core` PR.
+
+---
+
+### `@TenantKey`
+
+Hilt multibinding key annotation in `:core/scope/` analogous to `@VariantKey`. Used by structural `TenantPolicy` impls to bind into a `Map<String, T>` resolved by `TenantContext.id` at injection time. Variants ship a `default` entry as fallback.
+
+---
+
+### `TenantParams`
+
+Data class in `:core/variant/` carrying named typed fields (`employeeIdRegex`, `approvalLineMaxDepth`, …). Same client-schema / server-values contract as `TenantFlags`.
+
+---
+
+### `TenantPolicy`
+
+Conceptual term for a `:core/policy/` interface implemented per tenant when parametric `TenantFlags` / `TenantParams` aren't enough — e.g. `ApprovalLineRenderer` with `DefaultApprovalLineRenderer` + `ShinsegaeApprovalLineRenderer` impls. Lives in `:variants-{region}/tenants/{id}/`. The escalation; not the default.
+
+---
+
 ### Two-Layer Foundation
 
 The split between `:aos-core` (project-agnostic infrastructure) and `:core` (project-specific contracts). The split exists because infrastructure stability and product-domain stability evolve at different rates.
@@ -210,7 +248,9 @@ The split between `:aos-core` (project-agnostic infrastructure) and `:core` (pro
 
 ### Variant
 
-A region- or company-specific implementation of `:core` policy interfaces, packaged as a single Gradle module (`:variants-{id}`). Variants are isolated from each other; cross-variant imports are forbidden by the build graph.
+A region/regulator-specific implementation of `:core` policy interfaces, packaged as a single Gradle module (`:variants-{id}`). Differs by currency, settlement rails, KYC body, compliance limits, holiday calendar. Variants are isolated from each other; cross-variant imports are forbidden by the build graph. Per-customer-organization differences inside a region are modeled as [Tenant]s, not as separate variants.
+
+→ [19 — Tenants and Variants](19-tenants-and-variants.md)
 
 → [07 — `:variants-*`](07-variants.md)
 
