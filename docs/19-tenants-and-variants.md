@@ -1,6 +1,6 @@
 # 19 · Tenants and Variants
 
-> **Why this doc exists:** Real-world multi-region fintech has two axes of "differs per customer", not one. The framework collapses them at its peril. This doc gives each axis a name, a place to live, and a discipline for telling them apart.
+> **Why this doc exists:** Real-world Bizplay has two axes of "differs per customer", not one. The existing codebase collapses them into a single sprawl of `DetailConfig.isXxx()` predicates. The framework gives each axis a name, a place to live, and a discipline for telling them apart.
 
 ---
 
@@ -9,27 +9,31 @@
 ```
                               region / regulator boundary
                               ───────────────────────────
-                              KH (Cambodia)   VN (Vietnam)   KR (Korea)
-                              :variants-kh    :variants-vn   :variants-kr
-   customer-org boundary       ─────────────  ─────────────  ─────────────
+                              KR (Korea)       KH (Cambodia)   VN (Vietnam)
+                              :variants-kr     :variants-kh    :variants-vn
+   customer-org boundary       ─────────────  ─────────────   ─────────────
    ───────────────────────────
-   default (single tenant)        ●               ●            ●
-   posco-ict                                                   ●
-   itcen                                                       ●
-   lotte                                                       ●
-   nia                                                         ●
-   shinsegae                                                   ●
-   wips                                                        ●
-   ...                                                         ●
+   default                        ●                ●               ●
+   posco_ict                      ●
+   itcen                          ●
+   lotte                          ●
+   nia                            ●
+   shinsegae                      ●
+   wips                           ●
+   hana                           ●
+   ibs                            ●
+   spc                            ●
 ```
 
-| Axis | Compass term | What differs | Lifetime | Bound where |
+| Axis | Bizplay framework term | What differs | Lifetime | Bound where |
 |---|---|---|---|---|
-| **Region / regulator** | **Variant** | Currency, rails, compliance thresholds, holiday calendar, OTP channel, KYC requirements | Per login; doesn't change without logout | `:variants-{region}/` module |
-| **Customer org inside a region** | **Tenant** | Field visibility, label strings, employee-ID format, approval-line shape, footer text | Per login; doesn't change without logout | `TenantContext` carried in `Session`; defaults inside `:variants-{region}/tenants/` |
-| **Account inside an org** | `DepartmentAccount` | Active account ID stamped on requests | Switchable any time inside one session | `Session.activeAccountId: StateFlow` (see [12](12-departments-and-session.md)) |
+| **Region / regulator** | **Variant** | Currency, tax rules, fee/reimbursement caps, business calendar, OTP channel, capability flags (KakaoPay, Hi-Pass, MyData), receipt format | Per login; doesn't change without logout | `:variants-{region}/` module |
+| **Customer org inside a region** | **Tenant** | Field visibility (employee ID, ID number), label strings, employee-ID format / regex, approval-line shape, footer text, receipt-style preference | Per login; doesn't change without logout | `TenantContext` carried in `Session`; defaults inside `:variants-{region}/tenants/` |
+| **Institution membership inside an org** | `DepartmentAccount` | Active `USE_INTT_ID` + `COMPANY_CD` stamped on requests | Switchable any time inside one session | `Session.activeAccountId: StateFlow` (see [12](12-departments-and-session.md)) |
 
 Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different change frequency and a different binding mechanism.
+
+> **The existing Bizplay code conflates axes 1 and 2.** `DetailConfig.isNIA()`, `isPOSCO_ICT()`, etc. are *tenant* predicates today, but they appear in places that should be variant-only (currency formatting, business calendar) and vice versa. The framework forces a clean separation.
 
 ---
 
@@ -38,17 +42,17 @@ Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different 
 | Question | If "yes" → it's a **variant** | If "yes" → it's a **tenant** |
 |---|---|---|
 | Different currency / settlement rail? | ✓ | |
-| Different regulator (NBC vs SBV vs FSS)? | ✓ | |
-| Different KYC body / compliance limits? | ✓ | |
+| Different regulator (NTS / FSS in Korea vs NBC in Cambodia)? | ✓ | |
+| Different tax/VAT rules? | ✓ | |
 | Different OTP channel mandated by law? | ✓ | |
-| Different fee tiering? | usually | rarely |
+| Different fee tiering or per-category reimbursement cap? | usually | rarely |
 | Different label text / footer / disclosure language? | possibly | usually |
 | Hides or shows a field on a screen? | rarely | usually |
-| Different approval-line shape? | rarely | usually |
+| Different approval-line shape (number of steps, ordering)? | rarely | usually |
 | Different employee-ID format / regex? | rarely | usually |
 | Different per-org capability toggle? | | ✓ |
 
-**Rule of thumb:** If a Korean regulator change rolls out across every customer in Korea uniformly, the difference belongs in the **variant**. If a single customer org needs the change while the rest of Korea doesn't, it belongs in the **tenant**.
+**Rule of thumb:** If a Korean regulatory change rolls out across every customer in Korea uniformly, the difference belongs in the **variant**. If a single customer org (POSCO ICT, NIA, Shinsegae) needs the change while the rest of Korea doesn't, it belongs in the **tenant**.
 
 ---
 
@@ -56,15 +60,15 @@ Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different 
 
 ```
 :variants-kr/                                          ← regulator/region boundary
-├── policy/                                             (variant-level: NBC fees, KRW format,
-│   ├── KrFeeCalculator.kt                                  Korean OTP rules, …)
+├── policy/                                             (variant-level: KR tax rules, KRW format,
+│   ├── KrFeeCalculator.kt                                  Korean OTP rules, business calendar, …)
 │   ├── KrwAmountFormatter.kt
-│   └── KrComplianceThresholds.kt
+│   └── KrApprovalThresholds.kt
 ├── capability/
 │   └── KrCapabilities.kt
 ├── tenants/                                           ← tenant directory
 │   ├── default/
-│   │   ├── DefaultTenantProfile.kt                    (TenantContext factory: flags+params)
+│   │   ├── DefaultKrTenantProfile.kt                  (TenantContext factory: flags+params)
 │   │   └── DefaultApprovalLineRenderer.kt             (structural impl when params aren't enough)
 │   ├── nia/
 │   │   └── NiaTenantProfile.kt
@@ -73,14 +77,24 @@ Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different 
 │   ├── shinsegae/
 │   │   ├── ShinsegaeTenantProfile.kt
 │   │   └── ShinsegaeApprovalLineRenderer.kt           (structural — different layout)
-│   └── wips/
-│       └── WipsTenantProfile.kt
+│   ├── lotte/
+│   │   └── LotteTenantProfile.kt
+│   ├── itcen/
+│   │   └── ItcenTenantProfile.kt
+│   ├── wips/
+│   │   └── WipsTenantProfile.kt
+│   ├── hana/
+│   │   └── HanaTenantProfile.kt
+│   ├── ibs/
+│   │   └── IbsTenantProfile.kt
+│   └── spc/
+│       └── SpcTenantProfile.kt
 └── di/
     ├── KrVariantModule.kt                             (variant-level Hilt bindings)
     └── KrTenantModule.kt                              (tenant @IntoMap dispatch within :variants-kr)
 ```
 
-A tenant is **a directory inside its parent variant**, not a sibling module. Reason: a tenant only makes sense in the regulatory context of its variant. A customer who operates across two markets has two tenant entries (one per variant), with separate IDs and independent profiles.
+A tenant is **a directory inside its parent variant**, not a sibling module. Reason: a tenant only makes sense in the regulatory context of its variant. A customer who operates across two markets (rare but possible — say POSCO with subsidiaries in both Korea and Vietnam) has two tenant entries (one per variant), with separate IDs and independent profiles.
 
 ---
 
@@ -99,11 +113,13 @@ data class TenantContext(
 
 // :core/variant/TenantFlags.kt — explicit, named booleans (NOT a Map<String, Boolean>)
 data class TenantFlags(
-    val hidesEmployeeId: Boolean = false,
-    val clearsEmployeeNumberOnApproval: Boolean = false,
-    val requiresIdNumberCapture: Boolean = false,
+    val hidesEmployeeId: Boolean = false,                  // NIA today
+    val clearsEmployeeNumberOnApproval: Boolean = false,   // WIPS today
+    val requiresIdNumberCapture: Boolean = false,          // NIA today
+    val usesTripExpenseFlow: Boolean = false,              // POSCO ICT today (BZP_TRIP receipt type)
+    val usesLotteReceiptStyle: Boolean = false,            // Lotte / Chilsung today
+    val allowsPasswordResetInApp: Boolean = false,         // HANA today
     val showsBilingualReceipt: Boolean = false,
-    val allowsPasswordResetInApp: Boolean = false,
     // …grows as new tenants reveal new dimensions; each addition is a :core PR
 )
 
@@ -146,18 +162,21 @@ class ReceiptDetailViewModel @Inject constructor(
 
     private val showEmployeeId      = !tenant.flags.hidesEmployeeId
     private val employeeIdValidator = tenant.params.employeeIdRegex?.toRegex()
+    private val requiresIdCapture   = tenant.flags.requiresIdNumberCapture
 
-    init { /* state.value = ReceiptDetailState(showEmployeeId, …) */ }
+    init { /* state.value = ReceiptDetailState(showEmployeeId, requiresIdCapture, …) */ }
 }
 ```
 
 The ViewModel reads **fields**, never `tenant.id`. Same Logic-Blind rule as variants.
 
-| Was (BizPlay antipattern) | Now (Compass) |
+| Was (today's Bizplay antipattern) | Now (framework) |
 |---|---|
 | `if (DetailConfig.isNIA()) hideEmployeeId()` (in 12 places) | `if (tenant.flags.hidesEmployeeId) …` (or just bind the flag to `UiState`) |
 | `if (DetailConfig.isWIPS()) ID_NUMBER = ""` (in adapter) | Read `tenant.flags.clearsEmployeeNumberOnApproval` in the VM, pass the cleared model to the adapter |
 | `if (isPOSCO_ICT()) showPoscoReceipt()` | Promote `BZP_TRIP` evidence type to a `ReceiptEvidenceClassifier` policy if it's structural; otherwise `tenant.flags.usesTripExpenseFlow` |
+| `if (isHANA()) showPasswordResetButton()` | `tenant.flags.allowsPasswordResetInApp` |
+| `if (isChilsungBeverage()) lotteReceiptStyle()` | `tenant.flags.usesLotteReceiptStyle` (Chilsung is a Lotte child — shares Lotte's flag) |
 
 A new tenant onboarded with parametric differences adds **one file**: a `TenantProfile` factory that returns its `TenantContext`. No `:features` change, no `:core` change.
 
@@ -174,10 +193,10 @@ interface ApprovalLineRenderer {
 }
 
 // :variants-kr/tenants/default/DefaultApprovalLineRenderer.kt
-internal class DefaultApprovalLineRenderer : ApprovalLineRenderer { /* standard layout */ }
+internal class DefaultApprovalLineRenderer : ApprovalLineRenderer { /* standard 3-step layout */ }
 
 // :variants-kr/tenants/shinsegae/ShinsegaeApprovalLineRenderer.kt
-internal class ShinsegaeApprovalLineRenderer : ApprovalLineRenderer { /* Shinsegae layout */ }
+internal class ShinsegaeApprovalLineRenderer : ApprovalLineRenderer { /* Shinsegae's parallel-route layout */ }
 ```
 
 This is exactly the variant escalation pattern — same shape, different scope.
@@ -189,8 +208,9 @@ This is exactly the variant escalation pattern — same shape, different scope.
 | "Hide / show field X" | `TenantFlags.hidesX: Boolean` |
 | "Allow values matching regex R" | `TenantParams.xRegex: String` |
 | "Display text Y here" | `TenantParams.yText: String` |
-| "Render this thing entirely differently" | New `:core/policy/` interface + tenant impls |
+| "Render the approval line / receipt entirely differently" | New `:core/policy/` interface + tenant impls |
 | "Different network endpoint" | (Usually) variant, not tenant — escalate to variant |
+| "Different per-category expense cap" | Usually variant (e.g. KR caps); if it's truly per-customer, `TenantParams.<category>CapKrwOverride: Money?` |
 
 If you're tempted to add a flag like `usesShinsegaeApprovalLine: Boolean`, that's the smell that escalation is correct — the consumer would branch on the flag and produce different UIs, which is structural. Add the interface instead.
 
@@ -208,8 +228,10 @@ POST /v1/auth/login (response)
     "hidesEmployeeId":                false,
     "clearsEmployeeNumberOnApproval": false,
     "requiresIdNumberCapture":        false,
-    "showsBilingualReceipt":          false,
-    "allowsPasswordResetInApp":       true
+    "usesTripExpenseFlow":            false,
+    "usesLotteReceiptStyle":          false,
+    "allowsPasswordResetInApp":       false,
+    "showsBilingualReceipt":          false
   },
   "tenantParams": {
     "employeeIdRegex":     "^[A-Z]\\d{6}$",
@@ -236,7 +258,7 @@ data class LoginResponse(
 
 The server is the source of truth for both `flags` and `params`. The framework does **not** ship a hardcoded `flags` table per tenant inside the client — that's the same antipattern as hardcoded URLs.
 
-> **Why server-sourced flags?** The same reason MG sources URLs at runtime: changing a flag mid-quarter shouldn't require an APK release. The client only needs the *schema* (typed fields in `TenantFlags`); the *values* are server-supplied.
+> **Why server-sourced flags?** The same reason MgGate sources URLs at runtime: changing a flag mid-quarter shouldn't require an APK release. The client only needs the *schema* (typed fields in `TenantFlags`); the *values* are server-supplied. The existing Bizplay codebase has the *opposite* shape — `DetailConfig.isNIA()` returns a hardcoded boolean tied to compile-time strings — and the cost of that is the inability to onboard a new tenant without an APK release.
 
 ---
 
@@ -293,11 +315,11 @@ For non-structural (flag/param) differences, **no Hilt entry is needed** — the
 
 ---
 
-## 9. Worked example: BizPlay's 11 customers under `:variants-kr`
+## 9. Worked example: Bizplay's Korean tenants under `:variants-kr`
 
-Mapping the BizPlay antipattern (`DetailConfig.isXxx()`) to Compass's tenant model:
+Mapping the Bizplay antipattern (`DetailConfig.isXxx()`) to the framework's tenant model:
 
-| BizPlay predicate | Compass shape | Where it lives |
+| Existing Bizplay predicate | Framework shape | Where it lives |
 |---|---|---|
 | `isPOSCO_ICT()` → use BZP_TRIP receipt type | `flags.usesTripExpenseFlow = true` | `posco_ict/PoscoIctTenantProfile.kt` |
 | `isNIA()` → hide employee ID, mask ID number | `flags.hidesEmployeeId = true`, `flags.requiresIdNumberCapture = true` | `nia/NiaTenantProfile.kt` |
@@ -310,13 +332,14 @@ Mapping the BizPlay antipattern (`DetailConfig.isXxx()`) to Compass's tenant mod
 | `isIBS()` | One small flag | `ibs/IbsTenantProfile.kt` |
 | `isSPC()` | Capability flag | `spc/SpcTenantProfile.kt` |
 | `isPOSTGRES()` | Test-env naming; **not a tenant** — it's an environment variant | (Drop entirely; use `BuildConfig.MG_URL` per buildType — see [11 § 3](11-mg-and-runtime-config.md)) |
+| `isADD()` / `isADDDEV()` | Same as POSTGRES — environment names | (Drop entirely) |
 
 **124 call sites of `DetailConfig.isXxx()` collapse to:**
 
-- ~5 named fields in `TenantFlags`
+- ~6 named fields in `TenantFlags`
 - ~3 named fields in `TenantParams`
 - 1 structural policy (`ApprovalLineRenderer`) with 2 impls (default + Shinsegae)
-- 10 `TenantProfile` factories (one per tenant, each ~10–30 lines)
+- 9 `TenantProfile` factories (one per real tenant, each ~10–30 lines)
 
 Zero `if (tenant.id == "…")` branches anywhere in `:features`.
 
@@ -338,7 +361,7 @@ Zero `if (tenant.id == "…")` branches anywhere in `:features`.
 | `:data` change | ✗ | ✗ |
 | `:core` change | only if adding a new variant-level policy interface | only if adding a new flag, param, or `TenantPolicy` |
 
-A tenant is strictly more lightweight than a variant. The framework should make tenant onboarding **a single PR per tenant** — usually three files: the `TenantProfile`, the catalogue entry, and a possibly-empty `:variants-{region}/tenants/{id}/` subfolder.
+A tenant is strictly more lightweight than a variant. The framework should make tenant onboarding **a single PR per tenant** — usually three files: the `TenantProfile`, the catalogue entry, and a possibly-empty `:variants-{region}/tenants/{id}/` subfolder. That's the win over today's `DetailConfig.isXxx()` shape — where adding one new customer means touching every screen that branches on customer identity.
 
 ---
 
@@ -346,14 +369,15 @@ A tenant is strictly more lightweight than a variant. The framework should make 
 
 | ❌ Don't model as a tenant | ✅ Goes in |
 |---|---|
-| A different environment (prod vs staging) | `BuildConfig.MG_URL` per buildType (see [11 § 3](11-mg-and-runtime-config.md)) |
-| A different regulator | New `:variants-{region}` module |
+| A different environment (prod vs staging vs UAT vs sandbox) | `BuildConfig.MG_URL` per buildType (see [11 § 3](11-mg-and-runtime-config.md)) |
+| A different regulator / region | New `:variants-{region}` module |
 | A different currency / rail | New `:variants-{region}` module |
-| A user's individual settings (notification prefs) | User-scoped prefs (`PreferenceDelegator`-equivalent) on `Session` |
-| A user's role inside an org (admin vs member) | Permission set on `UserSession` |
-| A subaccount inside an org | `DepartmentAccount` — see [12](12-departments-and-session.md) |
+| A user's individual settings (notification prefs) | User-scoped prefs (`EncryptedPrefs`) on `Session` |
+| A user's role inside an org (admin vs approver vs submitter) | Permission set on `UserSession` |
+| A subaccount inside an org (which `USE_INTT_ID` is active) | `DepartmentAccount` — see [12](12-departments-and-session.md) |
 | A Play Store reviewer flag | `RuntimeConfig.storeReviewMode` — see [11 § 6.5](11-mg-and-runtime-config.md) |
-| A non-released feature being A/B tested | Feature-flag system (Firebase Remote Config); not MG, not tenant |
+| A non-released feature being A/B tested | Feature-flag system (Firebase Remote Config); not MgGate, not tenant |
+| A test/sandbox tenant inside the existing `DetailConfig` chain (`isPOSTGRES`, `isADD`, `isADDDEV`) | Not a tenant — those are environments. Use buildTypes. |
 
 If a difference is **temporary** (rollout, kill switch, experiment), it is **not a tenant** — tenants are stable organizational identities. The other mechanisms exist for the temporary cases.
 
@@ -367,9 +391,9 @@ These extend the invariants in CLAUDE.md.
 2. **`:features` reads tenant fields, never `tenant.id`.** Branching on `tenant.id` is the same antipattern as branching on `variantId`. Use flags, params, or structural `TenantPolicy`.
 3. **Tenant flags are server-sourced.** The client owns the *schema*; the server owns the *values*. No hardcoded per-tenant flag tables in the client.
 4. **Tenants live inside variants.** No `:tenants-{id}` sibling modules. A multi-region customer has separate tenant entries per variant.
-5. **Every variant has a `default` tenant.** Single-tenant variants still ship a `default` profile. This keeps the `TenantContext` field on `Session` non-nullable.
+5. **Every variant has a `default` tenant.** Single-tenant variants (`:variants-kh`, `:variants-vn` today) still ship a `default` profile. This keeps the `TenantContext` field on `Session` non-nullable.
 6. **`TenantFlags` and `TenantParams` use named, typed fields.** No `Map<String, Any>` backdoors.
-7. **`POSTGRES` is not a tenant.** Environments are buildTypes, not tenants.
+7. **Environments are buildTypes, not tenants.** `isPOSTGRES`, `isADD`, `isADDDEV` from the existing `DetailConfig` are dropped — replaced by `BuildConfig.MG_URL` per buildType.
 
 ---
 

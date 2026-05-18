@@ -10,11 +10,12 @@
 
 `:app` is intentionally **thin**. It contains:
 
-- The `Application` class
+- The `Application` class (`BizplayApplication`)
 - The Manifest
 - The top-level navigation graph
 - The DI registry — every Hilt module needed to wire the running app
 - The `BootCoordinator` and the `LoggedInComponent` definition
+- The `VariantCatalogue` and `TenantCatalogue`
 - The debug-only environment-override UI
 
 Business logic does not live here. UI does not live here (beyond the host `Activity`). The orchestrator's job is to **glue**, nothing more.
@@ -25,37 +26,42 @@ Business logic does not live here. UI does not live here (beyond the host `Activ
 
 ```
 :app/
-└── src/main/kotlin/com/<org>/app/
-    ├── CompassApplication.kt        # @HiltAndroidApp; bootstrap
+└── src/main/kotlin/com/bizplay/app/
+    ├── BizplayApplication.kt        # @HiltAndroidApp; bootstrap
     ├── MainActivity.kt              # Single-Activity host
     ├── AppNavigation.kt             # Top-level NavHost
     │
     ├── boot/
-    │   ├── BootCoordinator.kt       # Drives MG → gate → login → SessionGraph build
-    │   ├── MgClient.kt              # Calls the hardcoded MG URL
+    │   ├── BootCoordinator.kt       # Drives MgGate → gate → login → SessionGraph build
+    │   ├── MgClient.kt              # Calls the hardcoded MgGate URL
     │   └── BootResult.kt            # Ready | Maintenance | ForceUpdate
     │
     ├── di/
     │   ├── NetworkModule.kt         # @Provides aos-core HTTP/Retrofit foundations
+    │   ├── SecurityModule.kt        # @Provides mVaccine, TransKey, Secucen EdgeCrypto wrappers
     │   ├── LoggedInComponent.kt     # Custom @LoggedInScoped Hilt component definition
     │   ├── LoggedInEntryPoint.kt    # Entry point exposing :data + :variants-* bindings
     │   ├── LoggedInBindingsModule.kt# Singleton-scoped façade for ViewModel injection
-    │   ├── RuntimeConfigModule.kt   # Provides immutable RuntimeConfig once MG returns
+    │   ├── VariantResolverModule.kt # Picks active variant's policy from the multibindings map
+    │   ├── TenantResolverModule.kt  # Picks active tenant's structural policies (when present)
+    │   ├── RuntimeConfigModule.kt   # Provides immutable RuntimeConfig once MgGate returns
     │   └── FirebaseModule.kt        # Analytics, Crashlytics, RemoteConfig wiring
     │
     ├── session/
     │   ├── SessionFactory.kt        # Builds Session from LoginResponse
-    │   ├── AccountIdInterceptor.kt  # OkHttp interceptor stamping activeAccountId
+    │   ├── AccountIdInterceptor.kt  # OkHttp interceptor stamping USE_INTT_ID + COMPANY_CD
     │   ├── LoggedInComponentManager.kt # Owns the lifecycle of LoggedInComponent
     │   └── LogoutHandler.kt         # Drops LoggedInComponent, clears prefs/caches
     │
     ├── variant/
     │   ├── VariantCatalogue.kt      # The list of all known variants (VariantContexts)
-    │   └── VariantContextResolver.kt # Maps VariantId → VariantContext at login time
+    │   ├── VariantContextResolver.kt # Maps VariantId → VariantContext at login time
+    │   ├── TenantCatalogue.kt       # The list of all known tenants per variant
+    │   └── TenantContextResolver.kt # Maps (VariantId, TenantId) → TenantContext at login time
     │
     └── debug/                       # debug build type only
         ├── EnvironmentOverride.kt   # Compose dialog: Production / Staging / UAT / Sandbox
-        └── DebugOverlay.kt          # Variant + environment + active account indicator
+        └── DebugOverlay.kt          # Variant + tenant + environment + active account indicator
 ```
 
 ---
@@ -64,27 +70,29 @@ Business logic does not live here. UI does not live here (beyond the host `Activ
 
 ```kotlin
 @HiltAndroidApp
-class CompassApplication : Application() {
+class BizplayApplication : Application() {
 
-    @Inject lateinit var securityProvider: SecurityProvider
+    @Inject lateinit var securityProvider: SecurityProvider   // wraps mVaccine + root/jailbreak checks
+    @Inject lateinit var licenseChecker: LicenseChecker       // wraps RSLicenseSDK
     @Inject lateinit var loggerInit: Logger.Initializer
 
     override fun onCreate() {
         super.onCreate()
         loggerInit.install()
-        securityProvider.runColdStartChecks()  // root/jailbreak abort
-        // No MG fetch here — happens in BootCoordinator from BootScreen
+        securityProvider.runColdStartChecks()  // root/jailbreak/malware abort
+        licenseChecker.verifyOrAbort()         // registration check
+        // No MgGate fetch here — happens in BootCoordinator from BootScreen
     }
 }
 ```
 
-The Application class is small on purpose. Heavyweight initialization happens lazily, gated by feature consumers.
+The Application class is small on purpose. Heavyweight initialization happens lazily, gated by feature consumers. (Today's `BizplayApplication` does a lot more than this; the framework moves all of that into `:aos-core` or feature-specific lazy init.)
 
 ---
 
 ## 4. Top-Level Navigation
 
-`AppNavigation.kt` defines the only `NavHost` in the app. It strings together the feature graphs from `:features` and the chatbot graph from `:features-chatbot`:
+`AppNavigation.kt` defines the only `NavHost` in the app. It strings together the feature graphs from `:features` and the sibling feature modules:
 
 ```kotlin
 @Composable
@@ -94,36 +102,44 @@ fun AppNavigation(
 ) {
     NavHost(navController, startDestination = Route.Boot) {
         bootNavGraph(navController)                        // :features/boot — calls BootCoordinator
-        authNavGraph(navController)                        // :features/auth — login + OTP
-        mainScaffoldNavGraph(navController, capabilities)  // :features (transfer, account, …)
-        chatbotNavGraph(navController)                     // :features-chatbot
+        authNavGraph(navController)                        // :features/auth — login + OTP + institution picker
+        mainScaffoldNavGraph(navController, capabilities)  // :features (receipt, expense, approval, card, notice, account)
+        scannerNavGraph(navController)                     // :features-scanner (camera, OCR, card-scan)
 
-        // Variant-locked feature: only registered when the active variant supports it.
-        if (capabilities.supportsBakongDisputes()) {
-            bakongDisputesNavGraph(navController)          // :features-bakong-disputes
+        // Variant-locked features: only registered when the active variant supports them.
+        if (capabilities.supportsHipassTracking()) {
+            hipassNavGraph(navController)                  // :features-hipass — KR only
+        }
+        if (capabilities.supportsMyDataIntegration()) {
+            myDataNavGraph(navController)                  // :features-mydata — KR only (when implemented)
         }
     }
 }
 ```
 
-**Capability-gated navigation** is how variant-only feature UI is reachable. Three levels at which a `VariantCapabilities` flag controls visibility:
+**Capability-gated navigation** is how variant-only feature UI is reachable. Three levels at which a `VariantCapabilities` flag (or a `TenantFlags` field) controls visibility:
 
-1. **Whole nav graph** — the entire feature module is conditionally registered (above, for `:features-bakong-disputes`). Variants without the flag never reach those routes.
-2. **Bottom-bar / scaffold tabs** — `mainScaffoldNavGraph` reads `capabilities.supportsCardlessAtm()` and includes/omits the ATM tab.
+1. **Whole nav graph** — the entire feature module is conditionally registered (above, for `:features-hipass`). Variants without the flag never reach those routes.
+2. **Bottom-bar / scaffold tabs** — `mainScaffoldNavGraph` reads `capabilities.supportsKakaoPayLink()` and includes/omits the "Link KakaoPay" entry in the More menu.
 3. **In-screen elements** — a feature ViewModel reads a flag at construction and stores it as `UiState`, gating buttons or sections.
 
 ```kotlin
 // Inside a :features ViewModel — flag flows into UiState, never into a `when` branch.
 @HiltViewModel
-internal class TransferInputViewModel @Inject constructor(
+internal class ReceiptDetailViewModel @Inject constructor(
     capabilities: VariantCapabilities,
+    tenant: TenantContext,
     // …
-) : MviViewModel<TransferInputState, TransferInputEvent, TransferInputEffect>(
-    initial = TransferInputState(showQrScanner = capabilities.supportsKhqrScan()),
+) : MviViewModel<ReceiptDetailState, ReceiptDetailEvent, ReceiptDetailEffect>(
+    initial = ReceiptDetailState(
+        showOcrButton      = capabilities.supportsOcrTicketScan(),
+        showEmployeeIdRow  = !tenant.flags.hidesEmployeeId,
+        showKakaoPayLink   = capabilities.supportsKakaoPayLink(),
+    ),
 )
 ```
 
-The variant module sets `supportsKhqrScan() = true` (KH) or `false` (VN). The UI just reads `state.showQrScanner` — never `variantId`. Same pattern at every level.
+The variant module sets `supportsKakaoPayLink() = true` (KR) or `false` (KH/VN). The tenant profile sets `hidesEmployeeId = true` (NIA) or `false` (everyone else). The UI just reads `state.showKakaoPayLink` / `state.showEmployeeIdRow` — never `variantId` or `tenant.id`. Same pattern at every level.
 
 Each `*NavGraph` extension is exposed publicly by the corresponding feature module. Routes are referenced via `Route` constants, not raw strings.
 
@@ -136,13 +152,16 @@ Each `*NavGraph` extension is exposed publicly by the corresponding feature modu
 | Module | Owns |
 |---|---|
 | `NetworkModule` | OkHttp, Retrofit factory, interceptors (auth, base URL, account ID) |
-| `RuntimeConfigModule` | Holds the singleton `RuntimeConfig` populated by `BootCoordinator` after MG returns |
+| `SecurityModule` | Bindings for `SecurityProvider` (mVaccine), `SecureKeypad` (TransKey), `EdgeCrypto` (Secucen), `LicenseChecker` (RSLicense) |
+| `RuntimeConfigModule` | Holds the singleton `RuntimeConfig` populated by `BootCoordinator` after MgGate returns |
 | `FirebaseModule` | Analytics, Crashlytics, Remote Config wiring |
 | `LoggedInComponent` | Custom Hilt component built once at login, dropped at logout |
-| `LoggedInEntryPoint` | Hilt entry point that exposes `:data` repos + `:variants-*` policies to outside collaborators |
+| `LoggedInEntryPoint` | Hilt entry point that exposes `:data` repos + `:variants-*` policies + the tenant context to outside collaborators |
 | `LoggedInBindingsModule` | One `@Provides` per `:core` interface that ViewModels inject; routes through `LoggedInEntryPoint` |
+| `VariantResolverModule` | Picks the active variant's policy from each multibindings map |
+| `TenantResolverModule` | Picks the active tenant's structural policies (when present); falls back to `default` |
 
-`DataModule` (in `:data`) and per-variant modules (e.g. `KhVariantModule` in `:variants-kh`) are **defined in their own modules**, not here. `:app` references them indirectly through `LoggedInComponent`'s install scope — Hilt's annotation processor finds and aggregates them automatically.
+`DataModule` (in `:data`) and per-variant modules (e.g. `KrVariantModule` in `:variants-kr`, `KrTenantModule` for the Korean tenant structural impls) are **defined in their own modules**, not here. `:app` references them indirectly through `LoggedInComponent`'s install scope — Hilt's annotation processor finds and aggregates them automatically.
 
 ---
 
@@ -159,7 +178,7 @@ class BootCoordinator @Inject constructor(
     private val componentManager: LoggedInComponentManager,
 ) {
     suspend fun runBoot(): BootResult {
-        val config = mgClient.fetch()                  // hardcoded MG URL
+        val config = mgClient.fetch()                  // hardcoded MgGate URL
         runtimeConfigStore.commit(config)              // expose to :aos-core interceptors
         return when {
             config.maintenance is MaintenanceState.Down -> BootResult.Maintenance(config.maintenance)
@@ -170,7 +189,7 @@ class BootCoordinator @Inject constructor(
 
     suspend fun onLoginSuccess(login: LoginResponse) {
         val session = sessionFactory.build(login)
-        componentManager.build(login.variantId, session)
+        componentManager.build(login.variantId, login.tenantId, session)
     }
 
     suspend fun onLogout() {
@@ -187,8 +206,8 @@ This is the **only** function set that should be touched when changing the boot 
 
 `debug/` source set is included only in the `debug` build type. It exposes:
 
-- A dialog letting QA pick which **MG endpoint** to use (`Production` / `Staging` / `UAT` / `Sandbox`)
-- A persistent overlay showing the current MG endpoint, the resolved `RuntimeConfig.urls.main`, the active variant, and the active account
+- A dialog letting QA pick which **MgGate endpoint** to use (`Production` / `Staging` / `UAT` / `Sandbox`)
+- A persistent overlay showing the current MgGate endpoint, the resolved `RuntimeConfig.urls.main` (today's `Conf.IPPP_SITE_URL`), the active variant, the active tenant, and the active institution membership
 
 In `release` builds, this code is not compiled in — `BuildConfig.DEBUG` gating ensures the production binary cannot expose the picker. The mechanism is detailed in [11 — MG and Runtime Config](11-mg-and-runtime-config.md).
 
@@ -203,7 +222,9 @@ In `release` builds, this code is not compiled in — `BuildConfig.DEBUG` gating
 | Compose screens | `:features` |
 | OkHttp configuration | `:aos-core` |
 | Variant-specific business logic | `:variants-{id}` |
+| Tenant-specific structural impls | `:variants-{region}/tenants/{id}/` |
 | `if (variantId == X)` switches | nowhere |
+| `if (DetailConfig.isXxx())` | nowhere — use `tenant.flags.*` |
 
 `:app` should be small enough that a new engineer can read every file in it during onboarding. If `:app` is growing past a few hundred lines per file, logic is leaking in — push it back to the right module.
 
@@ -212,6 +233,7 @@ In `release` builds, this code is not compiled in — `BuildConfig.DEBUG` gating
 ## 9. Cross-references
 
 - The boot mechanism in detail: [10 — Boot Phases](10-boot-phases.md)
-- MG endpoint mechanics: [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
-- The `Session` and account-switching mechanism: [12 — Departments and Session](12-departments-and-session.md)
+- MgGate endpoint mechanics: [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
+- The `Session` and institution-switching mechanism: [12 — Departments and Session](12-departments-and-session.md)
 - What `:data` and `:variants-*` expose for `:app` to consume: [05 — `:data`](05-data.md), [07 — `:variants-*`](07-variants.md)
+- The tenant resolution path: [19 — Tenants and Variants](19-tenants-and-variants.md)

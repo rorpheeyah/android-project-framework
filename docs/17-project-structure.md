@@ -7,15 +7,18 @@
 ## Top-Level
 
 ```
-compass/
+bizplay/
 ├── aos-core/                       (Git submodule)
 ├── core/
 ├── design-system/
 ├── data/
 ├── features/
-├── features-chatbot/
-├── features-{variant-feature}/     (zero or more, e.g. features-bakong-disputes)
-├── variants-{id}/                  (one per region/company: variants-kh, variants-vn, ...)
+├── features-scanner/
+├── features-hipass/                (variant-locked: Korea-only highway-toll capture)
+├── features-{variant-feature}/     (zero or more future modules, e.g. features-mydata)
+├── variants-kr/                    (Korea — multiple tenant profiles inside)
+├── variants-kh/                    (Cambodia)
+├── variants-vn/                    (Vietnam)
 ├── app/
 ├── docs/
 ├── settings.gradle.kts
@@ -30,7 +33,7 @@ compass/
 ```
 aos-core/
 ├── build.gradle.kts
-└── src/main/kotlin/com/aos/core/
+└── src/main/kotlin/com/bizplay/aoscore/
     ├── network/
     │   ├── HttpClient.kt
     │   ├── BaseApiResponse.kt
@@ -39,20 +42,30 @@ aos-core/
     │   ├── AuthHeaderInterceptor.kt
     │   └── RetrofitFactory.kt
     ├── security/
-    │   ├── SecurityProvider.kt
+    │   ├── SecurityProvider.kt           # wraps mVaccine + root/jailbreak checks
     │   ├── BiometricAuthenticator.kt
+    │   ├── SecureKeypad.kt               # wraps TransKey SDK
+    │   ├── EdgeCrypto.kt                 # wraps Secucen libEdgeCrypto.so
     │   ├── EncryptionUtils.kt
-    │   └── KeystoreManager.kt
+    │   ├── KeystoreManager.kt
+    │   └── LicenseChecker.kt             # wraps RSLicenseSDK
     ├── storage/
-    │   ├── EncryptedPrefs.kt
+    │   ├── EncryptedPrefs.kt             # wraps EncryptedSharedPreferences
+    │   ├── EncryptedDatabase.kt          # wraps SQLCipher (async init)
     │   └── SecureFileStore.kt
     ├── logging/
     │   ├── Logger.kt
     │   └── CrashlyticsTree.kt
-    └── firebase/
-        ├── AnalyticsClient.kt
-        ├── RemoteConfigClient.kt
-        └── MessagingService.kt
+    ├── firebase/
+    │   ├── AnalyticsClient.kt
+    │   ├── RemoteConfigClient.kt
+    │   └── MessagingService.kt
+    ├── webview/
+    │   ├── BizWebView.kt                 # Compose Composable; replaces today's BizWebview Java class
+    │   ├── WebActionBridge.kt            # one @JavascriptInterface method, versioned payload
+    │   └── CookieSync.kt
+    └── location/
+        └── LocationProvider.kt           # replaces today's BizLocationManager
 ```
 
 Detail: [02 — `:aos-core`](02-aos-core.md)
@@ -64,43 +77,60 @@ Detail: [02 — `:aos-core`](02-aos-core.md)
 ```
 core/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/core/
+└── src/main/kotlin/com/bizplay/core/
     ├── variant/
     │   ├── VariantContext.kt
-    │   └── VariantId.kt
+    │   ├── VariantId.kt
+    │   ├── TenantContext.kt
+    │   ├── TenantId.kt
+    │   ├── TenantFlags.kt
+    │   └── TenantParams.kt
     ├── runtime/
     │   ├── RuntimeConfig.kt
     │   ├── ApiUrls.kt
     │   ├── MaintenanceState.kt
-    │   └── ForceUpdate.kt
+    │   ├── ForceUpdate.kt
+    │   └── StoreReviewMode.kt
     ├── session/
     │   ├── Session.kt
     │   ├── DepartmentAccount.kt
     │   └── AccountId.kt
     ├── repository/
-    │   ├── TransferRepository.kt
     │   ├── AuthRepository.kt
-    │   └── AccountRepository.kt
+    │   ├── ReceiptRepository.kt
+    │   ├── ApprovalRepository.kt
+    │   ├── CardRepository.kt
+    │   ├── ExpenseRepository.kt
+    │   ├── OcrRepository.kt
+    │   └── NoticeRepository.kt
     ├── policy/
-    │   ├── TransferAmountPolicy.kt
+    │   ├── ExpenseAmountPolicy.kt
     │   ├── FeeCalculator.kt
     │   ├── AmountFormatter.kt
     │   ├── VariantCapabilities.kt
-    │   ├── BeneficiaryValidator.kt
+    │   ├── EmployeeIdValidator.kt
     │   ├── OtpDeliveryPolicy.kt
     │   ├── SupportContacts.kt
-    │   ├── ComplianceThresholds.kt
+    │   ├── ApprovalThresholds.kt
     │   ├── BusinessCalendar.kt
-    │   └── ReceiptRenderer.kt
+    │   ├── ReceiptRenderer.kt
+    │   ├── ApprovalLineRenderer.kt
+    │   ├── WebActionPolicy.kt
+    │   └── TenantProfile.kt
     ├── model/
     │   ├── Money.kt
     │   ├── Currency.kt
     │   ├── UserSession.kt
     │   ├── LoginResponse.kt
-    │   ├── Beneficiary.kt
-    │   ├── TransferIntent.kt
-    │   ├── TransferReceipt.kt
-    │   └── AccountBalance.kt
+    │   ├── Receipt.kt
+    │   ├── ReceiptDraft.kt
+    │   ├── ApprovalRequest.kt
+    │   ├── ApprovalLine.kt
+    │   ├── Card.kt
+    │   ├── CardStatement.kt
+    │   ├── ExpenseCategory.kt
+    │   ├── WebAction.kt
+    │   └── RenderedReceipt.kt
     ├── mvi/
     │   ├── UiState.kt
     │   ├── UiEvent.kt
@@ -108,7 +138,8 @@ core/
     │   └── MviViewModel.kt
     └── scope/
         ├── LoggedInScoped.kt
-        └── VariantKey.kt           # @MapKey for variant multibindings
+        ├── VariantKey.kt              # @MapKey for variant multibindings
+        └── TenantKey.kt               # @MapKey for tenant multibindings
 ```
 
 Detail: [03 — `:core`](03-core.md)
@@ -120,29 +151,39 @@ Detail: [03 — `:core`](03-core.md)
 ```
 design-system/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/design/
+└── src/main/kotlin/com/bizplay/design/
     ├── theme/
-    │   ├── CompassTheme.kt
-    │   ├── CompassColors.kt
-    │   ├── CompassTypography.kt
-    │   ├── CompassSpacing.kt
-    │   └── CompassShapes.kt
+    │   ├── BizTheme.kt
+    │   ├── BizColors.kt
+    │   ├── BizTypography.kt
+    │   ├── BizSpacing.kt
+    │   └── BizShapes.kt
     ├── components/
     │   ├── button/
-    │   │   ├── CompassButton.kt
-    │   │   ├── CompassPrimaryButton.kt
-    │   │   └── CompassSecondaryButton.kt
+    │   │   ├── BizButton.kt
+    │   │   ├── BizPrimaryButton.kt
+    │   │   └── BizSecondaryButton.kt
     │   ├── input/
-    │   │   ├── CompassTextField.kt
-    │   │   └── CompassPasswordField.kt
+    │   │   ├── BizTextField.kt
+    │   │   ├── BizPasswordField.kt        # wraps :aos-core SecureKeypadField (TransKey)
+    │   │   └── BizAmountField.kt
     │   ├── feedback/
-    │   │   ├── CompassSnackbar.kt
-    │   │   └── CompassDialog.kt
+    │   │   ├── BizSnackbar.kt
+    │   │   ├── BizDialog.kt
+    │   │   └── BizToast.kt
     │   ├── layout/
-    │   │   ├── CompassCard.kt
-    │   │   └── CompassBottomSheet.kt
+    │   │   ├── BizCard.kt
+    │   │   ├── BizBottomSheet.kt
+    │   │   ├── BizToolbar.kt              # Compose successor to today's FlexibleToolBar
+    │   │   └── BizScaffold.kt
+    │   ├── receipt/
+    │   │   ├── BizReceiptHeader.kt
+    │   │   ├── BizReceiptRow.kt
+    │   │   └── BizReceiptFooter.kt
+    │   ├── webview/
+    │   │   └── BizWebViewFrame.kt         # themed loading/error overlay around BizWebView
     │   └── icons/
-    │       └── CompassIcons.kt
+    │       └── BizIcons.kt
     └── modifiers/
         ├── DebouncedClickable.kt
         └── HapticTouchable.kt
@@ -157,35 +198,55 @@ Detail: [04 — `:design-system`](04-design-system.md)
 ```
 data/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/data/
+└── src/main/kotlin/com/bizplay/data/
     ├── api/
-    │   ├── FintechAuthApi.kt          # /v1/auth/...
-    │   ├── FintechTransferApi.kt      # /v1/transfer/...
-    │   ├── FintechAccountApi.kt       # /v1/accounts/...
-    │   ├── FintechCardApi.kt          # /v1/cards/...
+    │   ├── IpppAuthApi.kt
+    │   ├── IpppReceiptApi.kt
+    │   ├── IpppApprovalApi.kt
+    │   ├── IpppCardApi.kt
+    │   ├── IpppExpenseApi.kt
+    │   ├── IpppOcrApi.kt
+    │   ├── IpppNoticeApi.kt
     │   └── dto/
     │       ├── auth/
     │       │   ├── LoginRequest.kt
-    │       │   ├── LoginResponse.kt
-    │       │   └── OtpHandleDto.kt
-    │       ├── transfer/
-    │       │   ├── TransferRequest.kt
-    │       │   ├── TransferResponse.kt
-    │       │   └── FeeQuoteDto.kt
-    │       ├── account/
-    │       │   ├── AccountBalanceDto.kt
-    │       │   └── TransactionPageDto.kt
+    │       │   ├── LoginResponse.kt        # carries variantId + tenantId + tenantFlags + tenantParams + accounts
+    │       │   ├── OtpHandleDto.kt
+    │       │   └── InstitutionDto.kt       # USE_INTT_ID + COMPANY_CD + DVSN_CD/DVSN_NM + business info
+    │       ├── receipt/
+    │       │   ├── ReceiptDraftRequest.kt
+    │       │   ├── ReceiptResponse.kt
+    │       │   ├── ReceiptListResponse.kt
+    │       │   └── ReceiptFilter.kt
+    │       ├── approval/
+    │       │   ├── ApprovalListResponse.kt
+    │       │   ├── ApprovalActionRequest.kt
+    │       │   └── ApprovalLineDto.kt
+    │       ├── card/
+    │       │   ├── CardRegistrationRequest.kt
+    │       │   ├── CardListResponse.kt
+    │       │   └── StatementResponse.kt
+    │       ├── expense/
+    │       │   ├── ExpenseReportRequest.kt
+    │       │   └── BizTripBundleRequest.kt
+    │       ├── ocr/
+    │       │   ├── OcrSubmissionRequest.kt
+    │       │   └── OcrResultDto.kt
     │       └── shared/
     │           └── EmptyResponse.kt
     ├── repo/
-    │   ├── FintechAuthRepo.kt         # implements AuthRepository
-    │   ├── FintechTransferRepo.kt     # implements TransferRepository
-    │   ├── FintechAccountRepo.kt      # implements AccountRepository
-    │   ├── FintechCardRepo.kt         # implements CardRepository
+    │   ├── IpppAuthRepo.kt
+    │   ├── IpppReceiptRepo.kt
+    │   ├── IpppApprovalRepo.kt
+    │   ├── IpppCardRepo.kt
+    │   ├── IpppExpenseRepo.kt
+    │   ├── IpppOcrRepo.kt
+    │   ├── IpppNoticeRepo.kt
     │   └── mapping/
     │       ├── AuthMapping.kt
-    │       ├── TransferMapping.kt
-    │       └── AccountMapping.kt
+    │       ├── ReceiptMapping.kt
+    │       ├── ApprovalMapping.kt
+    │       └── CardMapping.kt
     └── di/
         └── DataModule.kt
 ```
@@ -199,7 +260,7 @@ Detail: [05 — `:data`](05-data.md)
 ```
 features/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/features/
+└── src/main/kotlin/com/bizplay/features/
     ├── boot/
     │   ├── BootScreen.kt
     │   ├── BootViewModel.kt
@@ -215,17 +276,42 @@ features/
     │   │   ├── OtpScreen.kt
     │   │   ├── OtpViewModel.kt
     │   │   └── OtpContract.kt
+    │   ├── institutionpicker/                  # successor to today's SelectUserInttIdActivity
+    │   │   ├── InstitutionPickerScreen.kt
+    │   │   ├── InstitutionPickerViewModel.kt
+    │   │   └── InstitutionPickerContract.kt
     │   └── AuthNavigator.kt
-    ├── transfer/
-    │   ├── input/
-    │   ├── review/
-    │   ├── result/
-    │   ├── TransferFlowState.kt
-    │   └── TransferNavigator.kt
+    ├── receipt/
+    │   ├── list/
+    │   ├── detail/
+    │   ├── edit/
+    │   ├── create/
+    │   ├── transport/
+    │   ├── biztrip/
+    │   ├── gasoline/
+    │   └── ReceiptNavigator.kt
+    ├── expense/
+    │   ├── report/
+    │   ├── category/
+    │   └── ExpenseNavigator.kt
+    ├── approval/
+    │   ├── inbox/
+    │   ├── action/
+    │   ├── line/
+    │   └── ApprovalNavigator.kt
+    ├── card/
+    │   ├── register/
+    │   ├── list/
+    │   ├── statement/
+    │   └── CardNavigator.kt
+    ├── notice/
+    │   ├── list/
+    │   ├── detail/
+    │   └── NoticeNavigator.kt
     └── account/
-        ├── balance/
-        ├── history/
-        ├── switcher/
+        ├── switcher/                            # in-session active-institution flip
+        ├── profile/
+        ├── language/
         └── AccountNavigator.kt
 ```
 
@@ -235,59 +321,119 @@ Detail: [06 — `:features`](06-features.md)
 
 ---
 
-## `:features-chatbot`
+## `:features-scanner`
 
 ```
-features-chatbot/
-├── build.gradle.kts
-└── src/main/kotlin/com/<org>/features/chatbot/
-    ├── (heavy SDKs imported here)
-    ├── ChatScreen.kt
-    ├── ChatViewModel.kt
-    ├── ChatContract.kt
-    └── ChatbotNavigator.kt
+features-scanner/
+├── build.gradle.kts                     # io.card, cameraviewplus, sasapi, OCR partner SDKs
+└── src/main/kotlin/com/bizplay/features/scanner/
+    ├── camera/
+    │   ├── CameraCaptureScreen.kt
+    │   ├── CameraCaptureViewModel.kt
+    │   └── CameraCaptureContract.kt
+    ├── ocr/
+    │   ├── ReceiptOcrScreen.kt
+    │   ├── ReceiptOcrViewModel.kt
+    │   ├── TicketOcrScreen.kt
+    │   └── TicketOcrViewModel.kt
+    ├── cardscan/
+    │   ├── CardScanScreen.kt              # wraps io.card SDK
+    │   └── CardScanViewModel.kt
+    ├── scraping/
+    │   └── ScrapingEnrichmentService.kt   # wraps sasapi
+    ├── di/
+    │   └── ScannerModule.kt
+    └── ScannerNavigator.kt
 ```
 
 ---
 
-## `:features-{variant-feature}` (e.g. `:features-bakong-disputes`)
+## `:features-hipass` (canonical variant-locked example)
 
 ```
-features-bakong-disputes/
+features-hipass/                          (Korea-only highway-toll capture)
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/features/bakongdisputes/
+└── src/main/kotlin/com/bizplay/features/hipass/
     ├── api/
-    │   ├── BakongDisputeApi.kt
+    │   ├── HipassApi.kt                 # Retrofit; KR-only endpoints
     │   └── dto/
-    │       ├── DisputeRequest.kt
-    │       └── DisputeResponse.kt
+    │       ├── HipassUsageRequest.kt
+    │       └── HipassUsageResponse.kt
     ├── repo/
-    │   └── BakongDisputeRepo.kt
+    │   └── HipassRepo.kt                # internal
     ├── screen/
-    │   ├── DisputeListScreen.kt
-    │   ├── DisputeDetailScreen.kt
-    │   └── DisputeContract.kt
+    │   ├── HipassListScreen.kt
+    │   ├── HipassDetailScreen.kt
+    │   └── HipassContract.kt
     └── di/
-        └── BakongDisputesModule.kt
+        └── HipassModule.kt              # @InstallIn(LoggedInComponent::class)
 ```
 
 Detail: [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md)
 
 ---
 
-## `:variants-{id}` (e.g. `:variants-kh`)
+## `:variants-kr` (with tenant subtree)
+
+```
+variants-kr/
+├── build.gradle.kts
+└── src/main/kotlin/com/bizplay/variants/kr/
+    ├── policy/
+    │   ├── KrExpenseAmountPolicy.kt
+    │   ├── KrFeeCalculator.kt
+    │   ├── KrEmployeeIdValidator.kt
+    │   ├── KrOtpDeliveryPolicy.kt
+    │   ├── KrApprovalThresholds.kt
+    │   ├── KrBusinessCalendar.kt
+    │   └── KrReceiptRenderer.kt
+    ├── format/
+    │   └── KrwAmountFormatter.kt
+    ├── capability/
+    │   └── KrCapabilities.kt
+    ├── support/
+    │   └── KrSupportContacts.kt
+    ├── tenants/
+    │   ├── default/
+    │   │   ├── DefaultKrTenantProfile.kt
+    │   │   └── DefaultApprovalLineRenderer.kt
+    │   ├── posco_ict/
+    │   │   └── PoscoIctTenantProfile.kt
+    │   ├── lotte/
+    │   │   └── LotteTenantProfile.kt
+    │   ├── nia/
+    │   │   └── NiaTenantProfile.kt
+    │   ├── shinsegae/
+    │   │   ├── ShinsegaeTenantProfile.kt
+    │   │   └── ShinsegaeApprovalLineRenderer.kt    # structural
+    │   ├── itcen/
+    │   │   └── ItcenTenantProfile.kt
+    │   ├── wips/
+    │   │   └── WipsTenantProfile.kt
+    │   ├── hana/
+    │   │   └── HanaTenantProfile.kt
+    │   ├── ibs/
+    │   │   └── IbsTenantProfile.kt
+    │   └── spc/
+    │       └── SpcTenantProfile.kt
+    └── di/
+        ├── KrVariantModule.kt           # variant-level @VariantKey bindings
+        └── KrTenantModule.kt            # tenant-level @TenantKey bindings (structural impls)
+```
+
+Detail: [07 — `:variants-*`](07-variants.md), [19 — Tenants and Variants](19-tenants-and-variants.md)
+
+---
+
+## `:variants-kh` (single-tenant variant)
 
 ```
 variants-kh/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/variants/kh/
+└── src/main/kotlin/com/bizplay/variants/kh/
     ├── policy/
-    │   ├── KhTransferAmountPolicy.kt
+    │   ├── KhExpenseAmountPolicy.kt
     │   ├── KhFeeCalculator.kt
-    │   ├── KhBeneficiaryValidator.kt
-    │   ├── KhOtpDeliveryPolicy.kt
-    │   ├── KhComplianceThresholds.kt
-    │   ├── KhBusinessCalendar.kt
     │   └── KhReceiptRenderer.kt
     ├── format/
     │   └── KhrAmountFormatter.kt
@@ -295,11 +441,12 @@ variants-kh/
     │   └── KhCapabilities.kt
     ├── support/
     │   └── KhSupportContacts.kt
+    ├── tenants/
+    │   └── default/
+    │       └── DefaultKhTenantProfile.kt
     └── di/
         └── KhVariantModule.kt
 ```
-
-Detail: [07 — `:variants-*`](07-variants.md)
 
 ---
 
@@ -309,8 +456,8 @@ Detail: [07 — `:variants-*`](07-variants.md)
 app/
 ├── build.gradle.kts
 ├── src/main/AndroidManifest.xml
-├── src/main/kotlin/com/<org>/app/
-│   ├── CompassApplication.kt
+├── src/main/kotlin/com/bizplay/app/
+│   ├── BizplayApplication.kt
 │   ├── MainActivity.kt
 │   ├── AppNavigation.kt
 │   ├── boot/
@@ -319,21 +466,25 @@ app/
 │   │   └── BootResult.kt
 │   ├── di/
 │   │   ├── NetworkModule.kt
+│   │   ├── SecurityModule.kt
 │   │   ├── LoggedInComponent.kt
 │   │   ├── LoggedInEntryPoint.kt
 │   │   ├── LoggedInBindingsModule.kt
-│   │   ├── VariantResolverModule.kt   # picks active variant's policy from the multibindings map
+│   │   ├── VariantResolverModule.kt          # picks active variant's policy from the multibindings map
+│   │   ├── TenantResolverModule.kt           # picks active tenant's structural policies (with default fallback)
 │   │   ├── RuntimeConfigModule.kt
 │   │   └── FirebaseModule.kt
 │   ├── session/
 │   │   ├── SessionFactory.kt
-│   │   ├── AccountIdInterceptor.kt
+│   │   ├── AccountIdInterceptor.kt           # stamps X-Use-Intt-Id + X-Company-Cd
 │   │   ├── LoggedInComponentManager.kt
 │   │   └── LogoutHandler.kt
 │   └── variant/
 │       ├── VariantCatalogue.kt
-│       └── VariantContextResolver.kt
-└── src/debug/kotlin/com/<org>/app/debug/
+│       ├── VariantContextResolver.kt
+│       ├── TenantCatalogue.kt
+│       └── TenantContextResolver.kt
+└── src/debug/kotlin/com/bizplay/app/debug/
     ├── EnvironmentOverride.kt
     └── DebugOverlay.kt
 ```
@@ -345,19 +496,20 @@ Detail: [08 — `:app`](08-app-orchestrator.md)
 ## Build Wiring (`settings.gradle.kts`)
 
 ```kotlin
-rootProject.name = "compass"
+rootProject.name = "bizplay"
 
 include(":aos-core")
 include(":core")
 include(":design-system")
 include(":data")
 include(":features")
-include(":features-chatbot")
+include(":features-scanner")
+include(":features-hipass")
+include(":variants-kr")
 include(":variants-kh")
 include(":variants-vn")
-include(":variants-ppcbank")
 include(":app")
-// Add additional :variants-{id} and :features-{variant-feature} modules here as the project grows.
+// Add additional :variants-{id} and :features-{feature-name} modules here as the project grows.
 ```
 
 ---
@@ -366,4 +518,5 @@ include(":app")
 
 - Why this shape: [01 — Module Topology](01-module-topology.md)
 - Onboarding a new variant uses this layout: [13 — Onboarding a Variant](13-onboarding-a-variant.md)
+- Onboarding a tenant inside an existing variant: [19 — Tenants and Variants § 10](19-tenants-and-variants.md)
 - Build perf consequences: [14 — Build Performance](14-build-performance.md)

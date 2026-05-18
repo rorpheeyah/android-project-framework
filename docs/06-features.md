@@ -8,11 +8,11 @@
 
 ## 1. Purpose
 
-`:features` is the **UI engine** — the screens, ViewModels, navigation, and feature-flow orchestration that the user actually sees. It is deliberately **Logic-Blind**: every banking decision (how a fee is calculated, which validation rule applies, what API is called) is delegated to a `:core` interface that some other module implements.
+`:features` is the **UI engine** — the screens, ViewModels, navigation, and feature-flow orchestration that the user actually sees. It is deliberately **Logic-Blind**: every business decision (how a reimbursable amount is calculated, which validation rule applies, what API is called, which fields are visible for the current tenant) is delegated to a `:core` interface that some other module implements.
 
 This module is a **single Gradle module** with feature boundaries enforced by **packages**, not by sub-modules. We call this shape the **Hybrid-Monolith**.
 
-The visual primitives (`CompassTheme`, `CompassButton`, `CompassTextField`, …) live in `:design-system`, not here. `:features` consumes them.
+The visual primitives (`BizTheme`, `BizButton`, `BizTextField`, `BizWebView`, …) live in `:design-system`, not here. `:features` consumes them.
 
 ---
 
@@ -29,7 +29,7 @@ The textbook answer to "many features" is "one Gradle module per feature". For t
 
 The win is **build performance** + **refactoring fluidity**. The cost — and we accept it — is that **package-level discipline depends on convention** rather than the build system. Lint rules and code review enforce it.
 
-> **When to break out into a separate module:** when a feature pulls in **heavy unique dependencies** that other features should not pay for, OR when a feature is variant-locked with its own API + DTOs + screens. The chatbot is the canonical example for the first; `:features-bakong-disputes` is the canonical example for the second. See [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md).
+> **When to break out into a separate module:** when a feature pulls in **heavy unique dependencies** that other features should not pay for, OR when a feature is variant-locked with its own API + DTOs + screens. The scanner (io.card + camera + OCR + scraping) is the canonical example for the first; `:features-hipass` (Korea-only highway-toll capture) is the canonical example for the second. See [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md).
 
 ---
 
@@ -37,43 +37,77 @@ The win is **build performance** + **refactoring fluidity**. The cost — and we
 
 ```
 :features/
-└── src/main/kotlin/com/<org>/features/
-    ├── boot/                  # Cold-start: MG fetch, MaintenanceGate, ForceUpdateGate
+└── src/main/kotlin/com/bizplay/features/
+    ├── boot/                  # Cold-start: MgGate fetch, MaintenanceGate, ForceUpdateGate
     │   ├── BootScreen.kt
     │   ├── BootViewModel.kt
     │   ├── BootContract.kt
     │   ├── MaintenanceGate.kt
     │   └── ForceUpdateGate.kt
     │
-    ├── auth/                  # Login, registration, OTP, biometric prompt
+    ├── auth/                  # Login, OTP, institution picker (today's SelectUserInttIdActivity)
     │   ├── login/
     │   │   ├── LoginScreen.kt
     │   │   ├── LoginViewModel.kt
     │   │   └── LoginContract.kt
     │   ├── otp/
+    │   ├── institutionpicker/
+    │   │   ├── InstitutionPickerScreen.kt
+    │   │   ├── InstitutionPickerViewModel.kt
+    │   │   └── InstitutionPickerContract.kt
     │   └── AuthNavigator.kt
     │
-    ├── transfer/              # P2P, QR, beneficiary lookup, review
-    │   ├── input/
-    │   │   ├── TransferInputScreen.kt
-    │   │   ├── TransferInputViewModel.kt
-    │   │   └── TransferInputContract.kt
-    │   ├── review/
-    │   ├── result/
-    │   ├── TransferFlowState.kt
-    │   └── TransferNavigator.kt
+    ├── receipt/               # Receipt list, detail, edit, create (camera entry lives in :features-scanner)
+    │   ├── list/
+    │   │   ├── ReceiptListScreen.kt
+    │   │   ├── ReceiptListViewModel.kt
+    │   │   └── ReceiptListContract.kt
+    │   ├── detail/
+    │   ├── edit/
+    │   ├── create/
+    │   ├── transport/         # taxi / transport entry
+    │   ├── biztrip/           # business-trip bundle (and BizDoc variant)
+    │   ├── gasoline/          # fuel + route capture
+    │   └── ReceiptNavigator.kt
     │
-    └── account/               # Balances, history, account switcher
-        ├── balance/
-        ├── history/
+    ├── expense/               # Expense report bundling, category picker
+    │   ├── report/
+    │   ├── category/
+    │   └── ExpenseNavigator.kt
+    │
+    ├── approval/              # Approval inbox, approve/reject, line setup
+    │   ├── inbox/
+    │   │   ├── ApprovalInboxScreen.kt
+    │   │   ├── ApprovalInboxViewModel.kt
+    │   │   └── ApprovalInboxContract.kt
+    │   ├── action/
+    │   ├── line/
+    │   └── ApprovalNavigator.kt
+    │
+    ├── card/                  # Card register, list, statement (card scanner lives in :features-scanner)
+    │   ├── register/
+    │   ├── list/
+    │   ├── statement/
+    │   └── CardNavigator.kt
+    │
+    ├── notice/                # Announcements, contact, help
+    │   ├── list/
+    │   ├── detail/
+    │   └── NoticeNavigator.kt
+    │
+    └── account/               # Active-institution switcher (today's USE_INTT_ID flip), profile, language
         ├── switcher/
-        │   ├── AccountSwitcherSheet.kt
-        │   ├── AccountSwitcherViewModel.kt
-        │   └── AccountSwitcherContract.kt
+        │   ├── InstitutionSwitcherSheet.kt
+        │   ├── InstitutionSwitcherViewModel.kt
+        │   └── InstitutionSwitcherContract.kt
+        ├── profile/
+        ├── language/
         └── AccountNavigator.kt
 ```
 
 Note the absence of a `common/` package. Theme and component primitives live in `:design-system`, depended on directly. Anything truly cross-cutting at the *feature* level (a multi-flow state holder, for example) can stay in a feature-local helper or be promoted to `:core/model/` if it carries domain meaning.
+
+> **What's not in `:features`:** the OCR / camera / card-scan flows live in `:features-scanner` (heavy SDK weight). The Hi-Pass capture flow lives in `:features-hipass` (Korea-only API surface). The chatbot / KakaoPay-link flows, if implemented, would live in their own sibling modules. See [07 — `:variants-*` § 9](07-variants.md).
 
 ### Package-level conventions
 
@@ -85,19 +119,23 @@ Note the absence of a `common/` package. Theme and component primitives live in 
 
 ## 4. Logic-Blind Constraint
 
-A `:features` ViewModel **must not know** which variant is active.
+A `:features` ViewModel **must not know** which variant or tenant is active.
 
 | Allowed in `:features` | Not allowed in `:features` |
 |---|---|
-| `class TransferViewModel @Inject constructor(repo: TransferRepository, policy: TransferAmountPolicy)` | `class TransferViewModel @Inject constructor(repo: FintechTransferRepo)` |
-| `repo.submit(intent)` | `if (variantId == VariantId.KH) bakongFlow() else napasFlow()` |
+| `class ReceiptDetailViewModel @Inject constructor(repo: ReceiptRepository, amountPolicy: ExpenseAmountPolicy, capabilities: VariantCapabilities, tenant: TenantContext)` | `class ReceiptDetailViewModel @Inject constructor(repo: IpppReceiptRepo)` |
+| `repo.detail(id)` | `if (variantId == VariantId.KR) kakaoPayFlow() else localFlow()` |
 | Reading `VariantContext.displayName` to render a label | Reading `VariantContext.id` to dispatch logic |
-| Reading `capabilities.supportsKhqrScan()` and gating UI on the boolean | Reading `variantId` and gating UI on the string |
+| Reading `tenant.flags.hidesEmployeeId` to gate a field | Reading `tenant.id == "nia"` to gate a field |
+| Reading `capabilities.supportsKakaoPayLink()` and gating UI on the boolean | Reading `variantId` and gating UI on the string |
+| Reading `tenant.params.employeeIdRegex` and constructing a validator | Hardcoding the regex per tenant |
 
 Two rules:
 
 1. **Types from `:data` and `:variants-*` cannot appear in `:features` source code.** The build graph forbids it.
-2. **The variant ID must not appear in conditional branches.** `VariantContext` may be read for **display** (currency code, bank name, market label, logo); never for **dispatch**. To gate a feature, use `VariantCapabilities` (a `:core` interface) — the variant module sets the boolean, the UI reads it.
+2. **The variant ID and tenant ID must not appear in conditional branches.** `VariantContext` may be read for **display** (currency code, region name, market label, logo); `TenantContext` may be read for its **flag/param fields** — never for **dispatch**. To gate a feature, use `VariantCapabilities` (a `:core` interface) or a named `TenantFlags` field — the variant module / tenant profile sets the boolean, the UI reads it.
+
+> **Compare with today:** the existing Bizplay code has `if (DetailConfig.isNIA()) hideEmployeeId(); else if (DetailConfig.isWIPS()) clearEmployeeNumber(); …` patterns in `ReceiptDetailActivity` and several adapters. In the framework, the same screens become `setState { copy(showEmployeeId = !tenant.flags.hidesEmployeeId, clearEmployeeNumberOnApproval = tenant.flags.clearsEmployeeNumberOnApproval) }` — *one read*, no branching, in `init { … }` of the VM.
 
 ---
 
@@ -107,8 +145,8 @@ Navigation lives in two layers:
 
 | Layer | Owner | Purpose |
 |---|---|---|
-| **Top-level graph** | `:app` (`AppNavigation.kt`) | Boot → Auth → Main scaffold; conditionally includes variant-locked feature graphs |
-| **Feature subgraphs** | `:features` (`AuthNavigator.kt`, `TransferNavigator.kt`, …) | Internal routing within a feature |
+| **Top-level graph** | `:app` (`AppNavigation.kt`) | Boot → Auth → Main scaffold; conditionally includes variant-locked feature graphs (`:features-hipass` when `capabilities.supportsHipassTracking()` is true) |
+| **Feature subgraphs** | `:features` (`AuthNavigator.kt`, `ReceiptNavigator.kt`, `ApprovalNavigator.kt`, …) | Internal routing within a feature |
 
 Each feature exposes a `NavGraphBuilder.<feature>NavGraph(navController, …)` extension function, called from `:app`. Feature graphs reference each other only by route strings (no cross-package imports of Composables).
 
@@ -120,26 +158,32 @@ Each feature exposes a `NavGraphBuilder.<feature>NavGraph(navController, …)` e
 
 ```kotlin
 // In a :features screen
-import com.<org>.design.theme.CompassTheme
-import com.<org>.design.components.button.CompassButton
-import com.<org>.design.components.input.CompassTextField
+import com.bizplay.design.theme.BizTheme
+import com.bizplay.design.components.button.BizButton
+import com.bizplay.design.components.input.BizTextField
+import com.bizplay.design.components.input.BizPasswordField
 
 @Composable
 internal fun LoginContent(state: LoginState, onEvent: (LoginEvent) -> Unit) {
-    CompassTextField(
+    BizTextField(
         value = state.username,
         onValueChange = { onEvent(LoginEvent.UsernameChanged(it)) },
+        label = "Employee ID",
     )
-    CompassButton(
+    BizPasswordField(                          // routes through TransKey via :aos-core/security/
+        value = state.password,
+        onValueChange = { onEvent(LoginEvent.PasswordChanged(it)) },
+    )
+    BizButton(
         onClick = { onEvent(LoginEvent.SubmitClicked) },
         isLoading = state.isSubmitting,
     ) { Text("Sign in") }
 }
 ```
 
-`:app` wraps the entire `NavHost` in `CompassTheme { … }`, so every screen renders inside the design system without each having to opt in.
+`:app` wraps the entire `NavHost` in `BizTheme { … }`, so every screen renders inside the design system without each having to opt in.
 
-> **Variant branding override** is a future-roadmap concern. Branding is intentionally **not** part of MG's `RuntimeConfig` — see [11](11-mg-and-runtime-config.md). Until then, all variants share the design system.
+> **Per-tenant branding override** (POSCO red, Lotte navy, …) is a future-roadmap concern. Branding is intentionally **not** part of MgGate's `RuntimeConfig` — see [11](11-mg-and-runtime-config.md). Until then, all variants and tenants share the design system.
 
 Detail: [04 — `:design-system`](04-design-system.md).
 
@@ -159,12 +203,17 @@ Detail: [04 — `:design-system`](04-design-system.md).
 
 | ❌ Doesn't belong | ✅ Goes in |
 |---|---|
-| `FintechTransferRepo` | `:data` |
-| `interface TransferRepository` | `:core` |
+| `IpppReceiptRepo` | `:data` |
+| `interface ReceiptRepository` | `:core` |
 | `OkHttpClient` setup | `:aos-core` |
-| `CompassButton` and other UI primitives | `:design-system` |
-| Variant-specific fee tables | `:variants-{id}` |
-| `if (variantId == VariantId.PPC) { … }` | nowhere — use a policy or capability interface |
+| `BizButton` and other UI primitives | `:design-system` |
+| Region-specific fee / tax tables | `:variants-{id}` |
+| Tenant-specific layouts (Shinsegae's distinct approval line) | `:variants-{region}/tenants/{id}/` |
+| `if (variantId == "kr") { … }` | nowhere — use a policy or capability interface |
+| `if (DetailConfig.isNIA()) { … }` | nowhere — read `tenant.flags.*` instead |
+| WebView screens (terms, approval, mall, KakaoPay link) | `:features-{name}` sibling modules — see [18](18-webview-integration.md) |
+| Camera / OCR / card-scan UI | `:features-scanner` |
+| Hi-Pass capture | `:features-hipass` |
 
 ---
 
@@ -174,5 +223,6 @@ Detail: [04 — `:design-system`](04-design-system.md).
 - The visual primitives `:features` uses: [04 — `:design-system`](04-design-system.md)
 - Where repository implementations come from: [05 — `:data`](05-data.md)
 - Where variant policies come from: [07 — `:variants-*`](07-variants.md)
+- Where tenant flags / params come from: [19 — Tenants and Variants](19-tenants-and-variants.md)
 - MVI conventions every ViewModel follows: [09 — MVI Pattern](09-mvi-pattern.md)
 - Why Hybrid-Monolith specifically: [14 — Build Performance](14-build-performance.md)
