@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hilt Dependency Injection — Components, Scoping, and @Binds</title>
+<style>
+:root {
+  --navy:#0A1530; --navy-l:#142348; --bg:#050A18;
+  --teal:#00C8C8; --teal-l:#33DDDD; --teal-d:#008B8B;
+  --gold:#FFB940; --gold-l:#FFCF73;
+  --purple:#A855F7; --purple-l:#C084FC; --purple-d:#7C3AED;
+  --red:#EF4444; --red-l:#F87171;
+  --green:#10B981; --green-l:#34D399;
+  --blue:#3B82F6; --blue-l:#60A5FA;
+  --white:#FFFFFF; --grey:#94A3B8;
+  --card:#0F1E40; --card2:#16264A; --card3:#1C2F5A;
+  --border:rgba(0,200,200,.28);
+  --border-strong:rgba(0,200,200,.5);
+  --text:#F1F5FB;
+  --text-mid:#C7D5EA;
+  --dim:#9CB0CF;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;overflow-x:hidden;font-feature-settings:'cv11','ss01';-webkit-font-smoothing:antialiased}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;background:rgba(5,10,24,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:.75rem 2.5rem;height:58px}
+.nb{font-size:1.05rem;font-weight:900;letter-spacing:.07em;background:linear-gradient(120deg,var(--teal),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nl{display:flex;gap:.15rem;flex-wrap:wrap}
+.nl a{color:var(--text-mid);text-decoration:none;padding:.4rem .75rem;border-radius:7px;font-size:.78rem;font-weight:700;letter-spacing:.03em;transition:color .2s,background .2s}
+.nl a:hover,.nl a.active{color:var(--teal);background:rgba(0,200,200,.14)}
+
+/* COMMON */
+.wrap{max-width:1200px;margin:0 auto}
+.lbl{font-size:.72rem;font-weight:900;letter-spacing:.18em;color:var(--teal);text-transform:uppercase;margin-bottom:.55rem}
+.h1{font-size:clamp(2rem,4.7vw,3.2rem);font-weight:900;line-height:1.05;color:var(--white);margin-bottom:.85rem;letter-spacing:-.02em}
+.sub{font-size:1.04rem;color:var(--text-mid);max-width:740px;margin-bottom:2.6rem;line-height:1.65}
+code.inline{font-size:.85em;background:rgba(0,200,200,.14);padding:.12em .45em;border-radius:5px;color:var(--teal-l);font-family:'Fira Code',ui-monospace,monospace}
+
+/* HERO */
+#hero{min-height:64vh;background:var(--bg);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;padding:7rem 2rem 4rem}
+.hbg{position:absolute;inset:0;background:radial-gradient(ellipse 85% 60% at 50% 25%,rgba(0,200,200,.16) 0%,transparent 70%),radial-gradient(ellipse 50% 40% at 78% 72%,rgba(255,185,64,.09) 0%,transparent 60%),radial-gradient(ellipse 40% 35% at 18% 78%,rgba(168,85,247,.08) 0%,transparent 60%);pointer-events:none}
+.hgrid{position:absolute;inset:0;opacity:.04;background-image:linear-gradient(rgba(0,200,200,1) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,200,1) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
+.hinner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;max-width:880px}
+.badge{display:inline-flex;align-items:center;gap:.55rem;background:rgba(0,200,200,.14);border:1px solid rgba(0,200,200,.4);border-radius:50px;padding:.4rem 1.1rem;font-size:.78rem;font-weight:800;color:var(--teal-l);letter-spacing:.06em;margin-bottom:1.6rem}
+.htitle{font-size:clamp(2.4rem,6.5vw,4.4rem);font-weight:900;line-height:1.02;letter-spacing:-.03em;background:linear-gradient(130deg,#fff 0%,var(--teal-l) 45%,var(--gold) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1.2rem}
+.hsub{font-size:clamp(.98rem,1.7vw,1.15rem);color:var(--text-mid);max-width:680px;margin:0 auto 2rem;line-height:1.65}
+.hmeta{display:flex;flex-wrap:wrap;gap:1.5rem;justify-content:center;color:var(--dim);font-size:.82rem;font-weight:600;letter-spacing:.04em}
+.hmeta span{display:inline-flex;align-items:center;gap:.4rem}
+.hmeta strong{color:var(--gold-l)}
+
+/* SECTION SHELL */
+section{padding:5rem 2.5rem;border-top:1px solid rgba(0,200,200,.08)}
+section.alt{background:linear-gradient(180deg,#080F25 0%,var(--bg) 100%)}
+.sec-head{margin-bottom:2.5rem}
+
+/* CARDS */
+.cards{display:grid;gap:1.1rem}
+.cards.c2{grid-template-columns:repeat(2,1fr)}
+.cards.c3{grid-template-columns:repeat(3,1fr)}
+.cards.c4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:980px){.cards.c2,.cards.c3,.cards.c4{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:1.35rem 1.45rem;transition:transform .25s,border-color .25s,box-shadow .25s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--teal),var(--gold));opacity:.45}
+.card:hover{transform:translateY(-3px);border-color:var(--teal);box-shadow:0 14px 30px rgba(0,200,200,.18)}
+.card-h{display:flex;align-items:center;gap:.7rem;margin-bottom:.55rem}
+.card-i{font-size:1.2rem}
+.card-t{font-weight:900;font-size:.98rem;color:var(--white)}
+.card-tag{margin-left:auto;font-family:'Fira Code',monospace;font-size:.7rem;font-weight:700;color:var(--teal-l);background:rgba(0,200,200,.13);border:1px solid rgba(0,200,200,.34);border-radius:5px;padding:.12rem .45rem}
+.card-b{font-size:.88rem;color:var(--text-mid);line-height:1.6}
+.card-b strong{color:var(--gold-l)}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.tbl th,.tbl td{padding:.85rem 1rem;text-align:left;border-bottom:1px solid rgba(0,200,200,.12);font-size:.86rem;vertical-align:top}
+.tbl th{background:rgba(0,200,200,.1);color:var(--teal-l);font-weight:800;letter-spacing:.04em;font-size:.78rem;text-transform:uppercase}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td code{font-size:.82em;background:rgba(0,200,200,.13);padding:.08em .42em;border-radius:4px;color:var(--teal-l);font-family:'Fira Code',monospace}
+
+/* TREE / HIERARCHY */
+.tree{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:1.6rem;font-family:'Fira Code',ui-monospace,monospace;font-size:.85rem;line-height:1.95;color:var(--text);overflow-x:auto;box-shadow:0 14px 36px rgba(0,0,0,.35)}
+.tree .lvl{color:var(--teal-l);font-weight:700}
+.tree .scope{color:var(--gold-l)}
+.tree .life{color:var(--purple-l);font-style:italic}
+.tree .arrow{color:var(--dim)}
+
+/* CODE WINDOW */
+.code-win{background:#0A101F;border:1px solid rgba(0,200,200,.22);border-radius:12px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.cw-top{background:#0F1A33;padding:.6rem 1rem;display:flex;align-items:center;gap:.45rem;border-bottom:1px solid rgba(0,200,200,.18)}
+.dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.dr{background:#FF5F57}.dy{background:#FFBD2E}.dg{background:#28C840}
+.cw-lbl{font-size:.78rem;color:var(--text-mid);margin-left:.5rem;font-weight:600}
+.cw-body{padding:1.2rem 1.35rem;font-family:'Fira Code',ui-monospace,Consolas,monospace;font-size:.82rem;line-height:1.78;overflow-x:auto;color:var(--text)}
+pre{white-space:pre;font-family:inherit}
+.kw{color:#FF87A2}.s{color:#A5D6FF}.fn{color:#D2A8FF}.v{color:#FFC182}.cm{color:#8B9FBF}.ok{color:#7EE787}.an{color:#FFD080}.cl{color:#B4F0F0}
+
+/* SIDE BY SIDE */
+.sxs{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+@media (max-width:980px){.sxs{grid-template-columns:1fr}}
+.sxs-l{display:flex;flex-direction:column;gap:.7rem}
+.sxs-tag{font-family:'Fira Code',monospace;font-size:.74rem;font-weight:800;letter-spacing:.05em;color:var(--gold-l);background:rgba(255,185,64,.1);border:1px solid rgba(255,185,64,.3);border-radius:6px;padding:.3rem .6rem;align-self:flex-start}
+.sxs-tag.teal{color:var(--teal-l);background:rgba(0,200,200,.13);border-color:rgba(0,200,200,.36)}
+
+/* CALLOUT */
+.callout{border-radius:12px;padding:1.15rem 1.3rem;margin-top:1.25rem;display:flex;gap:.85rem;align-items:flex-start;border:1px solid}
+.co-warn{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.35)}
+.co-info{background:rgba(0,200,200,.07);border-color:rgba(0,200,200,.36)}
+.co-gold{background:rgba(255,185,64,.08);border-color:rgba(255,185,64,.36)}
+.co-ico{font-size:1.4rem;flex-shrink:0;line-height:1}
+.co-t{font-weight:900;font-size:.96rem;margin-bottom:.25rem;color:var(--white)}
+.co-b{font-size:.86rem;color:var(--text-mid);line-height:1.6}
+.co-b code{font-size:.86em;background:rgba(0,0,0,.3);padding:.08em .4em;border-radius:4px;color:var(--teal-l);font-family:'Fira Code',monospace}
+
+/* PROJECT-SPECIFIC SECTION */
+.proj-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-top:1.5rem}
+@media (max-width:980px){.proj-grid{grid-template-columns:1fr}}
+.proj-card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:1.4rem 1.5rem}
+.proj-h{display:flex;align-items:center;gap:.7rem;margin-bottom:.85rem;padding-bottom:.75rem;border-bottom:1px dashed rgba(0,200,200,.22)}
+.proj-tag{font-family:'Fira Code',monospace;font-size:.78rem;font-weight:800;color:var(--teal-l);background:rgba(0,200,200,.14);border:1px solid rgba(0,200,200,.36);border-radius:5px;padding:.22rem .55rem}
+.proj-name{font-weight:900;color:var(--white);font-size:1rem}
+.proj-body{font-size:.88rem;color:var(--text-mid);line-height:1.65}
+.proj-body code{font-size:.85em;background:rgba(0,200,200,.13);padding:.08em .4em;border-radius:4px;color:var(--teal-l);font-family:'Fira Code',monospace}
+
+/* FOOTER */
+footer{padding:3rem 2.5rem;border-top:1px solid var(--border);text-align:center;color:var(--dim);font-size:.85rem}
+footer a{color:var(--teal-l);text-decoration:none}
+footer a:hover{color:var(--teal)}
+
+/* ANIM */
+@keyframes fadedown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nb">HILT&nbsp;DI&nbsp;·&nbsp;ANDROID</div>
+  <div class="nl">
+    <a href="#hero">Intro</a>
+    <a href="#components">Components</a>
+    <a href="#scoping">Scoping</a>
+    <a href="#binds">@Binds vs @Provides</a>
+    <a href="#realworld">Real-world</a>
+    <a href="#in-compass">In Compass</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero" style="border-top:none">
+  <div class="hbg"></div>
+  <div class="hgrid"></div>
+  <div class="hinner">
+    <div class="badge">SENIOR ARCHITECT'S NOTES · ANDROID · KOTLIN</div>
+    <h1 class="htitle">Hilt Dependency Injection</h1>
+    <p class="hsub">Components, scoping, and the difference between <code class="inline">@Binds</code> and <code class="inline">@Provides</code> — explained with the patterns the Compass Framework actually uses in production.</p>
+    <div class="hmeta">
+      <span>Stack: <strong>Hilt / Dagger</strong></span>
+      <span>Processor: <strong>KSP</strong></span>
+      <span>Reference: <strong>:aos-core · :variants-* · :app</strong></span>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 1: COMPONENTS -->
+<section id="components">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SECTION 1</div>
+      <h2 class="h1">Hilt Components &amp; Hierarchy</h2>
+      <p class="sub">A Hilt <strong>Component</strong> is a generated container that knows how to construct and serve a fixed set of bindings. Each component is anchored to a real Android lifecycle — it is created when that lifecycle begins, and destroyed when the lifecycle ends. Bindings flow <em>down</em> the tree (children see ancestors), never up.</p>
+    </div>
+
+    <div class="tree" aria-label="Hilt component hierarchy">
+<pre><span class="lvl">SingletonComponent</span>            <span class="life">// created in Application.onCreate()</span>
+│                              <span class="life">// destroyed when the process dies</span>
+│                              <span class="scope">scope: @Singleton</span>
+│
+├── <span class="lvl">ActivityRetainedComponent</span>  <span class="life">// survives configuration changes</span>
+│   │                          <span class="scope">scope: @ActivityRetainedScoped</span>
+│   │
+│   ├── <span class="lvl">ViewModelComponent</span>    <span class="life">// one per ViewModel instance</span>
+│   │                          <span class="scope">scope: @ViewModelScoped</span>
+│   │
+│   └── <span class="lvl">ActivityComponent</span>     <span class="life">// rebuilt on rotation</span>
+│       │                      <span class="scope">scope: @ActivityScoped</span>
+│       │
+│       ├── <span class="lvl">FragmentComponent</span> <span class="life">// lives with the Fragment</span>
+│       │                      <span class="scope">scope: @FragmentScoped</span>
+│       │
+│       └── <span class="lvl">ViewComponent</span>     <span class="life">// custom Views with @WithFragmentBindings</span>
+│                              <span class="scope">scope: @ViewScoped</span>
+│
+└── <span class="lvl">ServiceComponent</span>           <span class="life">// bound to Service lifecycle</span>
+                               <span class="scope">scope: @ServiceScoped</span></pre>
+    </div>
+
+    <div class="callout co-info" style="margin-top:1.5rem">
+      <div class="co-ico">↓</div>
+      <div>
+        <div class="co-t">Reading the arrows</div>
+        <div class="co-b"><code>ActivityComponent</code> can inject anything bound in <code>SingletonComponent</code> and <code>ActivityRetainedComponent</code> — but the reverse is not true. Children can see ancestors; ancestors cannot reach into children. This is why a Singleton may never depend on an Activity-scoped binding.</div>
+      </div>
+    </div>
+
+    <div class="cards c2" style="margin-top:1.75rem">
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">SingletonComponent</span><span class="card-tag">@Singleton</span></div>
+        <div class="card-b">Process-lifetime container. Anchor for <strong>OkHttp</strong>, <strong>Retrofit</strong>, <strong>Room</strong>, <strong>DataStore</strong>, app-wide logging, and any other infrastructure that should outlive every screen.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">ActivityRetainedComponent</span><span class="card-tag">@ActivityRetainedScoped</span></div>
+        <div class="card-b">Survives configuration changes (rotation, dark-mode switch). The parent of <code class="inline">ViewModelComponent</code>. Useful for state that must outlive a single Activity instance but not the process.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">ViewModelComponent</span><span class="card-tag">@ViewModelScoped</span></div>
+        <div class="card-b">One per <code class="inline">@HiltViewModel</code>. Lives as long as the ViewModel — ideal for per-screen caches or use-case helpers that should not be shared across screens.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">ActivityComponent</span><span class="card-tag">@ActivityScoped</span></div>
+        <div class="card-b">Rebuilt on every configuration change. Holds <code class="inline">Activity</code>-aware collaborators: navigators that need an <code class="inline">@ActivityContext</code>, snackbar hosts, permission helpers.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">FragmentComponent</span><span class="card-tag">@FragmentScoped</span></div>
+        <div class="card-b">Tied to the Fragment lifecycle. Rarely the right choice in Compose-first projects — most Compass code skips Fragments entirely.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">●</span><span class="card-t">ServiceComponent</span><span class="card-tag">@ServiceScoped</span></div>
+        <div class="card-b">Bound to a <code class="inline">Service</code>. Use for foreground-service collaborators (e.g. background sync workers that aren't WorkManager).</div>
+      </div>
+    </div>
+
+    <div class="callout co-gold" style="margin-top:1.5rem">
+      <div class="co-ico">★</div>
+      <div>
+        <div class="co-t">Custom components are allowed</div>
+        <div class="co-b">Hilt's built-in tree covers ~95% of apps. When a feature has a lifecycle Hilt does not model — for Compass, that is the <strong>logged-in session</strong> — you define a custom component with <code>@DefineComponent</code>. The Compass <code>LoggedInComponent</code> is a child of <code>SingletonComponent</code> that is built at login and dropped at logout, with the custom scope <code>@LoggedInScoped</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: SCOPING -->
+<section id="scoping" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SECTION 2</div>
+      <h2 class="h1">Scoping Annotations</h2>
+      <p class="sub">A <strong>scope</strong> annotation tells Hilt: "<em>cache this instance for the lifetime of the matching component</em>". Without a scope, every injection point gets a <strong>new instance</strong> — which is sometimes exactly what you want, and sometimes a silent bug.</p>
+    </div>
+
+    <table class="tbl">
+      <thead>
+        <tr><th style="width:18%">Scope</th><th style="width:24%">Component</th><th>Behavior</th><th style="width:24%">Use for</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>(none)</code></td><td>—</td><td>New instance per injection point. <strong>Stateless by definition.</strong></td><td>Mappers, formatters, validators, pure functions wrapped in a class.</td></tr>
+        <tr><td><code>@Singleton</code></td><td><code>SingletonComponent</code></td><td>One instance for the entire process.</td><td><code>OkHttpClient</code>, <code>Retrofit</code>, <code>Room</code>, <code>DataStore</code>, <code>Json</code>.</td></tr>
+        <tr><td><code>@ActivityRetainedScoped</code></td><td><code>ActivityRetainedComponent</code></td><td>One per Activity, survives rotation.</td><td>State holders that outlive a single Activity instance.</td></tr>
+        <tr><td><code>@ViewModelScoped</code></td><td><code>ViewModelComponent</code></td><td>One per <code>@HiltViewModel</code>.</td><td>Per-screen caches, use-case helpers used only by one ViewModel.</td></tr>
+        <tr><td><code>@ActivityScoped</code></td><td><code>ActivityComponent</code></td><td>One per Activity, rebuilt on rotation.</td><td>Activity-context-bound helpers (snackbars, navigators).</td></tr>
+        <tr><td><code>@FragmentScoped</code></td><td><code>FragmentComponent</code></td><td>One per Fragment instance.</td><td>Rare in Compose-first stacks.</td></tr>
+        <tr><td><code>@LoggedInScoped</code><br><span style="color:var(--gold-l);font-size:.78rem">(custom — Compass)</span></td><td><code>LoggedInComponent</code></td><td>One per login session. Dropped on logout.</td><td>Session-bound repos, variant policies, <code>Session</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout co-warn" style="margin-top:1.75rem">
+      <div class="co-ico">⚠</div>
+      <div>
+        <div class="co-t">The memory-leak trap</div>
+        <div class="co-b"><strong>A binding scoped to a long-lived component must never hold a reference to a short-lived one.</strong> The classic foot-gun: marking a class <code>@Singleton</code> while it captures an <code>Activity</code> in its constructor. The Activity will be retained for the entire process — that is a leak. Rule of thumb: if a class holds anything <code>Context</code>-flavoured, prefer the narrowest scope that satisfies the use case. When unsure, leave it <em>unscoped</em> — a new instance per call is cheap, leaks are not.</div>
+      </div>
+    </div>
+
+    <div class="callout co-info" style="margin-top:1rem">
+      <div class="co-ico">i</div>
+      <div>
+        <div class="co-t">Scope is not a performance optimization</div>
+        <div class="co-b">A common anti-pattern is sprinkling <code>@Singleton</code> "to avoid creating objects". Don't. Scope is a <strong>correctness contract</strong> about identity: <em>"this instance must be the same across these injection sites"</em>. If the answer is "doesn't matter", leave it unscoped.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 3: @Binds vs @Provides -->
+<section id="binds">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SECTION 3</div>
+      <h2 class="h1"><code class="inline">@Provides</code> vs <code class="inline">@Binds</code></h2>
+      <p class="sub">Both annotations teach Hilt how to satisfy a type. The choice between them is mechanical once you know the rule: <strong>use <code class="inline">@Binds</code> when an interface implementation is constructor-injectable; use <code class="inline">@Provides</code> when you have to build the instance yourself</strong>.</p>
+    </div>
+
+    <div class="cards c2">
+      <div class="card">
+        <div class="card-h"><span class="card-i">▸</span><span class="card-t">@Provides</span><span class="card-tag">always-works</span></div>
+        <div class="card-b">A regular function inside an <code class="inline">object</code> module. You write the body; Hilt calls it whenever the return type is needed. <strong>Required</strong> for: third-party types, builder-pattern construction, <code class="inline">Retrofit.create()</code> calls, conditional logic, anything Hilt cannot constructor-inject.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">▸</span><span class="card-t">@Binds</span><span class="card-tag">interface-mapping</span></div>
+        <div class="card-b">An <code class="inline">abstract</code> function inside an <code class="inline">abstract class</code> module that maps an interface to a constructor-injectable implementation. <strong>Hilt generates the body at compile time</strong> — there is no runtime cost, and the bytecode is smaller than the equivalent <code class="inline">@Provides</code>.</div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.15rem;font-weight:900;margin:2.25rem 0 1rem;color:var(--white)">Side-by-side: the exact same wiring, two ways</h3>
+
+    <div class="sxs">
+      <div class="sxs-l">
+        <span class="sxs-tag">@Provides — explicit, more code</span>
+        <div class="code-win">
+          <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">AnalyticsModule.kt</span></div>
+          <div class="cw-body"><pre><span class="kw">@Module</span>
+<span class="kw">@InstallIn</span>(SingletonComponent::<span class="kw">class</span>)
+<span class="kw">object</span> AnalyticsModule {
+
+    <span class="kw">@Provides</span>
+    <span class="kw">@Singleton</span>
+    <span class="kw">fun</span> <span class="fn">provideAnalytics</span>(
+        impl: FirebaseAnalyticsTracker
+    ): AnalyticsTracker = impl
+}</pre></div>
+        </div>
+        <div class="card-b" style="font-size:.84rem;color:var(--dim);padding:.5rem 0">
+          Works, but <strong>noisy</strong>: Hilt could have figured this out itself. The function body is just a passthrough.
+        </div>
+      </div>
+      <div class="sxs-l">
+        <span class="sxs-tag teal">@Binds — idiomatic, generated</span>
+        <div class="code-win">
+          <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">AnalyticsModule.kt</span></div>
+          <div class="cw-body"><pre><span class="kw">@Module</span>
+<span class="kw">@InstallIn</span>(SingletonComponent::<span class="kw">class</span>)
+<span class="kw">abstract class</span> AnalyticsModule {
+
+    <span class="kw">@Binds</span>
+    <span class="kw">@Singleton</span>
+    <span class="kw">abstract fun</span> <span class="fn">bindAnalytics</span>(
+        impl: FirebaseAnalyticsTracker
+    ): AnalyticsTracker
+}</pre></div>
+        </div>
+        <div class="card-b" style="font-size:.84rem;color:var(--dim);padding:.5rem 0">
+          Hilt sees: "<code>FirebaseAnalyticsTracker</code> is the impl for <code>AnalyticsTracker</code>." That's the whole contract.
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.15rem;font-weight:900;margin:2.5rem 0 1rem;color:var(--white)">The implementation that makes <code class="inline">@Binds</code> possible</h3>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">FirebaseAnalyticsTracker.kt</span></div>
+      <div class="cw-body"><pre><span class="cm">// :data/analytics/FirebaseAnalyticsTracker.kt</span>
+<span class="kw">internal class</span> FirebaseAnalyticsTracker <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> firebase: FirebaseAnalytics,
+    <span class="kw">private val</span> session: Session,
+) : AnalyticsTracker {
+
+    <span class="kw">override fun</span> <span class="fn">track</span>(event: AnalyticsEvent) {
+        firebase.<span class="fn">logEvent</span>(event.name, event.params.<span class="fn">toBundle</span>())
+    }
+}</pre></div>
+    </div>
+
+    <div class="callout co-info" style="margin-top:1.25rem">
+      <div class="co-ico">i</div>
+      <div>
+        <div class="co-t">The deciding question</div>
+        <div class="co-b"><strong>"Can the implementation be constructor-injected?"</strong> If yes, use <code>@Binds</code> — it is more concise, generates less code, and clearly states "this interface maps to that class". If no (third-party class, complex builder, conditional logic), use <code>@Provides</code>.</div>
+      </div>
+    </div>
+
+    <table class="tbl" style="margin-top:1.5rem">
+      <thead>
+        <tr><th>Aspect</th><th><code>@Provides</code></th><th><code>@Binds</code></th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Module type</td><td><code>object</code> (or <code>class</code>)</td><td><code>abstract class</code> (or <code>interface</code>)</td></tr>
+        <tr><td>Function type</td><td>Regular, with a body</td><td><code>abstract</code>, no body</td></tr>
+        <tr><td>Generated code</td><td>Calls your function at runtime</td><td>Hilt generates the binding directly</td></tr>
+        <tr><td>Works for third-party types</td><td>Yes</td><td>No (impl must be <code>@Inject</code>-constructable)</td></tr>
+        <tr><td>Works for interfaces</td><td>Yes (but verbose)</td><td>Yes (preferred)</td></tr>
+        <tr><td>Builder/factory construction</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Bytecode size</td><td>Larger</td><td>Smaller</td></tr>
+        <tr><td>Mixable in the same module</td><td colspan="2" style="text-align:center"><strong>Yes — but only if the module is <code>abstract</code> and the <code>@Provides</code> functions are <code>companion object</code> members.</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- SECTION 4: REAL-WORLD EXAMPLE -->
+<section id="realworld" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SECTION 4</div>
+      <h2 class="h1">Real-World Example</h2>
+      <p class="sub">A production-shape vertical slice: an Activity injects an interface, an <code class="inline">@Binds</code> module maps it to the impl, and the impl is constructor-injected with its own dependencies. This is the pattern you write 90% of the time.</p>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;margin:0 0 .75rem;color:var(--gold-l)">1 · The contract — an interface</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:core/analytics/AnalyticsTracker.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">package</span> com.compass.core.analytics
+
+<span class="kw">interface</span> AnalyticsTracker {
+    <span class="kw">fun</span> <span class="fn">track</span>(event: AnalyticsEvent)
+    <span class="kw">fun</span> <span class="fn">identify</span>(userId: String)
+}
+
+<span class="kw">data class</span> AnalyticsEvent(
+    <span class="kw">val</span> name: String,
+    <span class="kw">val</span> params: Map&lt;String, Any&gt; = <span class="fn">emptyMap</span>(),
+)</pre></div>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;margin:1.75rem 0 .75rem;color:var(--gold-l)">2 · The implementation — constructor-injected</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:data/analytics/FirebaseAnalyticsTracker.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">package</span> com.compass.data.analytics
+
+<span class="kw">internal class</span> FirebaseAnalyticsTracker <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> firebase: FirebaseAnalytics,
+    <span class="kw">private val</span> clock: Clock,
+) : AnalyticsTracker {
+
+    <span class="kw">override fun</span> <span class="fn">track</span>(event: AnalyticsEvent) {
+        <span class="kw">val</span> params = Bundle().<span class="fn">apply</span> {
+            event.params.<span class="fn">forEach</span> { (k, v) -&gt; <span class="fn">putString</span>(k, v.<span class="fn">toString</span>()) }
+            <span class="fn">putLong</span>(<span class="s">"ts"</span>, clock.<span class="fn">now</span>().<span class="fn">toEpochMilli</span>())
+        }
+        firebase.<span class="fn">logEvent</span>(event.name, params)
+    }
+
+    <span class="kw">override fun</span> <span class="fn">identify</span>(userId: String) {
+        firebase.<span class="fn">setUserId</span>(userId)
+    }
+}</pre></div>
+    </div>
+
+    <div class="callout co-info" style="margin-top:1rem">
+      <div class="co-ico">i</div>
+      <div>
+        <div class="co-t">Note the <code>internal</code> visibility</div>
+        <div class="co-b">The impl is <code>internal</code> — the rest of the codebase only sees the <code>AnalyticsTracker</code> interface. This is the Compass convention: in <code>:data</code> and <code>:variants-*</code>, <strong>only the Hilt module is intentionally public</strong>.</div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;margin:1.75rem 0 .75rem;color:var(--gold-l)">3 · The Hilt module — <code class="inline">@Binds</code> + a <code class="inline">@Provides</code> for the third-party dep</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:data/di/AnalyticsModule.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">package</span> com.compass.data.di
+
+<span class="kw">@Module</span>
+<span class="kw">@InstallIn</span>(SingletonComponent::<span class="kw">class</span>)
+<span class="kw">abstract class</span> AnalyticsModule {
+
+    <span class="cm">// Interface → impl mapping. Pure compile-time wiring.</span>
+    <span class="kw">@Binds</span>
+    <span class="kw">@Singleton</span>
+    <span class="kw">abstract fun</span> <span class="fn">bindAnalytics</span>(
+        impl: FirebaseAnalyticsTracker
+    ): AnalyticsTracker
+
+    <span class="kw">companion object</span> {
+
+        <span class="cm">// Third-party type — must use @Provides because Firebase</span>
+        <span class="cm">// is a Google SDK class we cannot annotate with @Inject.</span>
+        <span class="kw">@Provides</span>
+        <span class="kw">@Singleton</span>
+        <span class="kw">fun</span> <span class="fn">provideFirebase</span>(
+            <span class="kw">@ApplicationContext</span> ctx: Context
+        ): FirebaseAnalytics = FirebaseAnalytics.<span class="fn">getInstance</span>(ctx)
+    }
+}</pre></div>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;margin:1.75rem 0 .75rem;color:var(--gold-l)">4 · The Activity consumes the interface</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:app/MainActivity.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">package</span> com.compass.app
+
+<span class="kw">@AndroidEntryPoint</span>
+<span class="kw">class</span> MainActivity : ComponentActivity() {
+
+    <span class="kw">@Inject lateinit var</span> analytics: AnalyticsTracker   <span class="cm">// the interface, not the impl</span>
+
+    <span class="kw">override fun</span> <span class="fn">onCreate</span>(savedInstanceState: Bundle?) {
+        <span class="kw">super</span>.<span class="fn">onCreate</span>(savedInstanceState)
+        analytics.<span class="fn">track</span>(AnalyticsEvent(name = <span class="s">"app_open"</span>))
+
+        <span class="fn">setContent</span> { CompassApp() }
+    }
+}</pre></div>
+    </div>
+
+    <div class="callout co-gold" style="margin-top:1.25rem">
+      <div class="co-ico">★</div>
+      <div>
+        <div class="co-t">Why this pattern earns its keep</div>
+        <div class="co-b">The Activity depends on an <strong>interface in <code>:core</code></strong>, not on Firebase. To swap Firebase for Mixpanel, write a <code>MixpanelAnalyticsTracker</code>, change <strong>one line</strong> in the module, and ship. To test the Activity, supply a fake <code>AnalyticsTracker</code> with <code>@TestInstallIn</code>. Neither change touches the call sites — that is the entire point of DI, and <code>@Binds</code> is the cheapest way to express it.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 5: IN COMPASS -->
+<section id="in-compass">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SECTION 5</div>
+      <h2 class="h1">Hilt in the Compass Framework</h2>
+      <p class="sub">This repository is a documentation specification of the <strong>Compass Framework</strong> — a multi-region Android banking architecture. Hilt is the load-bearing wiring mechanism. Below is a tour of how the patterns from sections 1–4 actually compose in the framework.</p>
+    </div>
+
+    <div class="proj-grid">
+      <div class="proj-card">
+        <div class="proj-h"><span class="proj-tag">@LoggedInScoped</span><span class="proj-name">A custom session-scoped component</span></div>
+        <div class="proj-body">Compass defines <code>LoggedInComponent</code> as a child of <code>SingletonComponent</code> with the custom scope <code>@LoggedInScoped</code>. It is built once by <code>BootCoordinator</code> after a successful login, holds <code>Session</code> + <code>VariantContext</code> + <code>TenantContext</code>, and is dropped by <code>LogoutHandler</code> at logout. Everything <code>@LoggedInScoped</code> becomes GC-eligible the moment the component is dropped — <strong>there is no purge sequence</strong>.</div>
+      </div>
+      <div class="proj-card">
+        <div class="proj-h"><span class="proj-tag">@InstallIn</span><span class="proj-name">Where each module installs</span></div>
+        <div class="proj-body"><code>:aos-core</code> infrastructure (OkHttp, Retrofit factory, security primitives) → <code>SingletonComponent</code>. The <code>:data</code> repository implementations and every <code>:variants-*</code> policy module → <code>LoggedInComponent</code>. <strong>Hilt auto-discovers them at compile time</strong> — there is no central registry of modules.</div>
+      </div>
+      <div class="proj-card">
+        <div class="proj-h"><span class="proj-tag">@Binds + @IntoMap</span><span class="proj-name">Multibindings as the single point of dispatch</span></div>
+        <div class="proj-body">Every <code>:variants-{id}</code> binds the same set of <code>:core</code> policy interfaces. Plain <code>@Binds</code> would fail with a duplicate-binding error. The framework's solution: <code>@Binds @IntoMap @VariantKey("kh") @LoggedInScoped</code>. A single resolver in <code>:app/di/VariantResolverModule.kt</code> picks the active variant's entry — <strong>no <code>when (variantId)</code> branches anywhere else</strong>.</div>
+      </div>
+      <div class="proj-card">
+        <div class="proj-h"><span class="proj-tag">KSP</span><span class="proj-name">Annotation processing</span></div>
+        <div class="proj-body">Compass uses <strong>KSP</strong> (Kotlin Symbol Processing) for Hilt, not kapt. KSP is roughly 2× faster on cold builds and significantly faster on incremental builds — see <code>docs/14-build-performance.md</code>.</div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.15rem;font-weight:900;margin:2.5rem 0 1rem;color:var(--white)">The variant binding pattern, verbatim from <code class="inline">docs/07-variants.md</code></h3>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:variants-kh/di/KhVariantModule.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">@Module</span>
+<span class="kw">@InstallIn</span>(LoggedInComponent::<span class="kw">class</span>)
+<span class="kw">abstract class</span> KhVariantModule {
+
+    <span class="kw">@Binds</span> <span class="kw">@IntoMap</span> <span class="kw">@VariantKey</span>(<span class="s">"kh"</span>) <span class="kw">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">amountPolicy</span>(impl: KhTransferAmountPolicy): TransferAmountPolicy
+
+    <span class="kw">@Binds</span> <span class="kw">@IntoMap</span> <span class="kw">@VariantKey</span>(<span class="s">"kh"</span>) <span class="kw">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">feeCalc</span>(impl: KhFeeCalculator): FeeCalculator
+
+    <span class="kw">@Binds</span> <span class="kw">@IntoMap</span> <span class="kw">@VariantKey</span>(<span class="s">"kh"</span>) <span class="kw">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">capabilities</span>(impl: KhCapabilities): VariantCapabilities
+
+    <span class="cm">// … one @Binds per :core policy interface</span>
+}</pre></div>
+    </div>
+
+    <div class="code-win" style="margin-top:1.25rem">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:app/di/VariantResolverModule.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">@Module</span>
+<span class="kw">@InstallIn</span>(LoggedInComponent::<span class="kw">class</span>)
+<span class="kw">object</span> VariantResolverModule {
+
+    <span class="kw">@Provides</span> <span class="kw">@LoggedInScoped</span>
+    <span class="kw">fun</span> <span class="fn">transferAmountPolicy</span>(
+        variant: VariantContext,
+        all: Map&lt;String, <span class="kw">@JvmSuppressWildcards</span> TransferAmountPolicy&gt;,
+    ): TransferAmountPolicy = <span class="fn">checkNotNull</span>(all[variant.id.value]) {
+        <span class="s">"No TransferAmountPolicy registered for variant ${variant.id}"</span>
+    }
+
+    <span class="cm">// … one provider per :core policy interface</span>
+}</pre></div>
+    </div>
+
+    <div class="callout co-info" style="margin-top:1.5rem">
+      <div class="co-ico">i</div>
+      <div>
+        <div class="co-t">Notice the <code>@Binds</code> / <code>@Provides</code> division</div>
+        <div class="co-b">The variant module uses <code>@Binds</code> because each impl is constructor-injectable. The resolver in <code>:app</code> uses <code>@Provides</code> because the body is non-trivial — it picks an entry from a map. <strong>Same module file pattern, two annotations, each used where it fits.</strong></div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.15rem;font-weight:900;margin:2.5rem 0 1rem;color:var(--white)">The orchestrator (<code class="inline">:app</code>)</h3>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:app/CompassApplication.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">@HiltAndroidApp</span>
+<span class="kw">class</span> CompassApplication : Application() {
+    <span class="cm">// Hilt's annotation processor wires every @Module @InstallIn(*)</span>
+    <span class="cm">// at compile time. No central registry needed.</span>
+}</pre></div>
+    </div>
+
+    <div class="cards c2" style="margin-top:1.5rem">
+      <div class="card">
+        <div class="card-h"><span class="card-i">▸</span><span class="card-t">Onboarding a new variant</span></div>
+        <div class="card-b">Drop in a <code class="inline">variants-{id}/</code> module with <code class="inline">@Binds @IntoMap @VariantKey("{id}") @LoggedInScoped</code> for each <code>:core</code> policy interface. Add one line to <code>settings.gradle</code> and one entry to <code>VariantCatalogue</code>. <strong>Zero edits to <code>:features</code>, <code>:data</code>, <code>:design-system</code>, or sibling variants.</strong> Hilt's compile-time aggregation does the rest.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">▸</span><span class="card-t">Tenants share the pattern</span></div>
+        <div class="card-b">Structural <code>TenantPolicy</code> impls bind with <code>@Binds @IntoMap @TenantKey("{id}") @LoggedInScoped</code> — the same multibinding shape, one level deeper than variants. Non-structural (flag/param) tenant differences need no Hilt entry at all; ViewModels just read <code>tenant.flags.*</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- KEY TAKEAWAYS -->
+<section class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="lbl">SUMMARY</div>
+      <h2 class="h1">Key Takeaways</h2>
+    </div>
+    <div class="cards c2">
+      <div class="card">
+        <div class="card-h"><span class="card-i">1</span><span class="card-t">Components are lifecycles</span></div>
+        <div class="card-b">Pick the component that matches how long the binding should live. Custom components (like Compass's <code>LoggedInComponent</code>) exist for lifecycles the standard tree does not model.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">2</span><span class="card-t">Scopes are correctness, not perf</span></div>
+        <div class="card-b">Scope expresses "same instance everywhere within this lifecycle". When in doubt, leave it unscoped — the cost is trivial, leaks are not.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">3</span><span class="card-t">Default to @Binds</span></div>
+        <div class="card-b">If the impl is constructor-injectable, use <code>@Binds</code>. Reach for <code>@Provides</code> only when you must — third-party types, builders, conditional construction.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">4</span><span class="card-t">Depend on interfaces</span></div>
+        <div class="card-b">Inject the contract, never the concrete class. The Compass framework's "Logic-Blind" <code>:features</code> module is the same principle applied at architectural scale.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Compass Framework — Architecture documentation · Hilt / Dagger · KSP
+  &nbsp;·&nbsp; See <a href="./docs/08-app-orchestrator.md">docs/08-app-orchestrator.md</a> · <a href="./docs/07-variants.md">docs/07-variants.md</a> · <a href="./docs/10-boot-phases.md">docs/10-boot-phases.md</a>
+</footer>
+
+<script>
+// Nav highlight on scroll
+const links = document.querySelectorAll('.nl a');
+const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+function onScroll() {
+  const y = window.scrollY + 90;
+  let active = sections[0];
+  for (const s of sections) { if (s.offsetTop <= y) active = s; }
+  links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + active.id));
+}
+document.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+</script>
+
+</body>
+</html>

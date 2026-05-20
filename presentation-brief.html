@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compass — Architecture Brief</title>
+<style>
+:root {
+  --bg:#050A18; --navy:#0A1530; --navy-l:#142348;
+  --teal:#00C8C8; --teal-l:#33DDDD; --teal-d:#008B8B;
+  --gold:#FFB940; --gold-l:#FFCF73;
+  --purple:#A855F7; --purple-l:#C084FC;
+  --red:#EF4444; --red-l:#F87171;
+  --green:#10B981; --green-l:#34D399;
+  --blue:#3B82F6; --blue-l:#60A5FA;
+  --card:#0F1E40; --card2:#16264A; --card3:#1C2F5A;
+  --border:rgba(0,200,200,.26); --border-s:rgba(0,200,200,.5);
+  --text:#F1F5FB; --text-mid:#C7D5EA; --dim:#9CB0CF;
+  --white:#fff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:300;background:rgba(5,10,24,.97);backdrop-filter:blur(18px);border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center;padding:0 2rem;gap:1.5rem}
+.nb{font-weight:900;font-size:1rem;letter-spacing:.06em;background:linear-gradient(120deg,var(--teal),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+.nl{display:flex;gap:.1rem;flex-wrap:wrap;overflow:hidden}
+.nl a{color:var(--dim);text-decoration:none;padding:.3rem .65rem;border-radius:6px;font-size:.74rem;font-weight:700;letter-spacing:.03em;transition:color .18s,background .18s;white-space:nowrap}
+.nl a:hover,.nl a.on{color:var(--teal);background:rgba(0,200,200,.13)}
+
+/* SECTIONS */
+section{padding:5.5rem 2rem;border-top:1px solid rgba(0,200,200,.07)}
+section.alt{background:linear-gradient(180deg,#070D20 0%,var(--bg) 100%)}
+.wrap{max-width:1200px;margin:0 auto}
+.lbl{font-size:.68rem;font-weight:900;letter-spacing:.2em;color:var(--teal);text-transform:uppercase;margin-bottom:.55rem}
+.h2{font-size:clamp(1.85rem,3.8vw,2.9rem);font-weight:900;letter-spacing:-.025em;color:var(--white);line-height:1.08;margin-bottom:.75rem}
+.sub{font-size:.98rem;color:var(--text-mid);max-width:680px;line-height:1.65;margin-bottom:2rem}
+code.i{font-family:'Fira Code',ui-monospace,monospace;font-size:.84em;background:rgba(0,200,200,.14);color:var(--teal-l);padding:.1em .42em;border-radius:4px}
+
+/* HERO */
+#hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:7rem 2rem 4rem;border-top:none;position:relative;overflow:hidden}
+.hbg{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 90% 65% at 50% 22%,rgba(0,200,200,.17) 0%,transparent 68%),radial-gradient(ellipse 55% 45% at 80% 75%,rgba(255,185,64,.1) 0%,transparent 60%),radial-gradient(ellipse 45% 40% at 15% 80%,rgba(168,85,247,.09) 0%,transparent 58%)}
+.hgrid{position:absolute;inset:0;opacity:.035;background-image:linear-gradient(var(--teal) 1px,transparent 1px),linear-gradient(90deg,var(--teal) 1px,transparent 1px);background-size:55px 55px;pointer-events:none}
+.hinner{position:relative;z-index:1;max-width:900px;margin:0 auto;display:flex;flex-direction:column;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:.5rem;background:rgba(0,200,200,.13);border:1px solid rgba(0,200,200,.38);border-radius:50px;padding:.38rem 1.05rem;font-size:.74rem;font-weight:800;color:var(--teal-l);letter-spacing:.07em;margin-bottom:1.8rem}
+.htitle{font-size:clamp(3rem,9vw,6.5rem);font-weight:900;line-height:.96;letter-spacing:-.04em;background:linear-gradient(135deg,#fff 0%,var(--teal-l) 42%,var(--gold) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1.25rem}
+.hsub{font-size:clamp(.95rem,1.6vw,1.15rem);color:var(--text-mid);max-width:640px;line-height:1.65;margin-bottom:2.5rem}
+.hpills{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:center;margin-bottom:2.8rem}
+.hpill{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;padding:.85rem 1.3rem;min-width:148px;display:flex;flex-direction:column;align-items:center;gap:.3rem;transition:transform .25s,border-color .25s,box-shadow .25s;cursor:default}
+.hpill:hover{transform:translateY(-4px);border-color:var(--teal);box-shadow:0 12px 28px rgba(0,200,200,.2)}
+.hpill-n{font-size:1.55rem;font-weight:900;background:linear-gradient(120deg,var(--teal-l),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1}
+.hpill-l{font-size:.7rem;color:var(--dim);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.hbtns{display:flex;gap:.85rem;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.7rem 1.55rem;border-radius:8px;font-size:.88rem;font-weight:800;text-decoration:none;cursor:pointer;border:none;transition:all .2s;letter-spacing:.015em}
+.btn-p{background:var(--teal);color:#000}.btn-p:hover{background:var(--teal-l);transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,200,200,.38)}
+.btn-o{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.2)}.btn-o:hover{border-color:var(--teal);color:var(--teal-l);background:rgba(0,200,200,.07)}
+
+/* CODE WINDOW */
+.cwin{background:#070E1E;border:1px solid rgba(0,200,200,.2);border-radius:12px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.cwin-top{background:#0D1929;padding:.55rem 1rem;display:flex;align-items:center;gap:.4rem;border-bottom:1px solid rgba(0,200,200,.15)}
+.dot{width:10px;height:10px;border-radius:50%}.dr{background:#FF5F57}.dy{background:#FFBD2E}.dg{background:#28C840}
+.cwin-lbl{font-size:.75rem;color:var(--dim);margin-left:.4rem;font-weight:600}
+.cwin-body{padding:1.15rem 1.3rem;font-family:'Fira Code',ui-monospace,Consolas,monospace;font-size:.8rem;line-height:1.8;overflow-x:auto;color:var(--text)}
+pre{white-space:pre;font-family:inherit}
+.kw{color:#FF87A2}.s{color:#A5D6FF}.fn{color:#D2A8FF}.v{color:#FFC182}
+.cm{color:#8B9FBF;font-style:italic}.ok{color:#7EE787}.an{color:#FFD080}.cl{color:#B4F0F0}
+
+/* CARDS */
+.grid{display:grid;gap:1.1rem}
+.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.g2,.g3,.g4,.sxs{grid-template-columns:1fr!important}}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:13px;padding:1.3rem 1.4rem;position:relative;overflow:hidden;transition:transform .22s,border-color .22s,box-shadow .22s}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--teal),var(--gold));opacity:.45}
+.card:hover{transform:translateY(-3px);border-color:var(--teal);box-shadow:0 12px 28px rgba(0,200,200,.17)}
+.card-h{display:flex;align-items:center;gap:.65rem;margin-bottom:.5rem}
+.card-i{font-size:1.25rem;flex-shrink:0}
+.card-t{font-weight:900;font-size:.97rem;color:var(--white)}
+.card-b{font-size:.86rem;color:var(--text-mid);line-height:1.6}
+.card-b code{font-family:'Fira Code',monospace;font-size:.84em;background:rgba(0,200,200,.13);color:var(--teal-l);padding:.07em .38em;border-radius:3px}
+
+/* TABLE */
+.tbl-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;background:linear-gradient(180deg,var(--card2),var(--card))}
+th,td{padding:.8rem 1.1rem;text-align:left;border-bottom:1px solid rgba(0,200,200,.1);font-size:.85rem;vertical-align:top}
+th{background:rgba(0,200,200,.09);color:var(--teal-l);font-weight:800;letter-spacing:.04em;font-size:.75rem;text-transform:uppercase}
+tr:last-child td{border-bottom:none}
+td code{font-family:'Fira Code',monospace;font-size:.82em;background:rgba(0,200,200,.12);color:var(--teal-l);padding:.07em .38em;border-radius:3px}
+td strong{color:var(--white)}
+.zero{color:var(--green-l);font-weight:900}
+
+/* CALLOUT */
+.callout{border-radius:11px;padding:1.05rem 1.25rem;margin:1.2rem 0;display:flex;gap:.8rem;align-items:flex-start;border:1px solid}
+.co-info{background:rgba(0,200,200,.07);border-color:rgba(0,200,200,.34)}
+.co-gold{background:rgba(255,185,64,.07);border-color:rgba(255,185,64,.34)}
+.co-ico{font-size:1.35rem;flex-shrink:0;line-height:1}
+.co-t{font-weight:900;font-size:.94rem;color:var(--white);margin-bottom:.2rem}
+.co-b{font-size:.85rem;color:var(--text-mid);line-height:1.6}
+.co-b code{font-family:'Fira Code',monospace;font-size:.85em;background:rgba(0,0,0,.3);color:var(--teal-l);padding:.06em .38em;border-radius:3px}
+.co-b strong{color:var(--white)}
+
+/* DAG */
+.dag-wrap{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:2rem 1.5rem;overflow-x:auto;box-shadow:0 12px 32px rgba(0,0,0,.38)}
+svg.dag{display:block;margin:0 auto;max-width:100%}
+
+/* FLOW */
+.flow{display:flex;flex-direction:column}
+.fstep{display:flex;gap:1.2rem;align-items:flex-start}
+.fstep-left{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.fstep-num{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--teal-d));display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.85rem;color:#000;flex-shrink:0}
+.fstep-line{width:2px;background:linear-gradient(180deg,var(--teal-d),rgba(0,200,200,.1));flex:1;margin:.25rem 0;min-height:28px}
+.fstep-body{padding-bottom:1.5rem;flex:1}
+.fstep-t{font-weight:900;font-size:.95rem;color:var(--white);margin-bottom:.25rem}
+.fstep-d{font-size:.85rem;color:var(--text-mid);line-height:1.6}
+.fstep-d code{font-family:'Fira Code',monospace;font-size:.85em;background:rgba(0,200,200,.13);color:var(--teal-l);padding:.06em .38em;border-radius:3px}
+.fstep-d strong{color:var(--gold-l)}
+
+/* VARIANT COMPARE */
+.vc-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+@media(max-width:700px){.vc-grid{grid-template-columns:1fr}}
+.vc-card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:13px;overflow:hidden}
+.vc-head{padding:.85rem 1.3rem;display:flex;align-items:center;gap:.8rem;border-bottom:1px solid rgba(0,200,200,.14)}
+.vc-flag{font-size:1.6rem;line-height:1}
+.vc-name{font-weight:900;font-size:1.1rem;color:var(--white)}
+.vc-tag{font-size:.72rem;color:var(--dim);font-weight:700;letter-spacing:.05em}
+.vc-rows{padding:.8rem 0}
+.vc-row{padding:.55rem 1.3rem;display:flex;flex-direction:column;gap:.18rem;border-bottom:1px solid rgba(0,200,200,.07)}
+.vc-row:last-child{border-bottom:none}
+.vc-rl{font-size:.72rem;font-weight:800;letter-spacing:.05em;color:var(--teal-l);text-transform:uppercase}
+.vc-rv{font-size:.88rem;color:var(--text)}
+.vc-check{color:var(--green-l)}.vc-cross{color:var(--red-l)}
+
+/* SEQUENCE */
+.seq{display:flex;flex-direction:column;gap:.55rem}
+.seq-item{display:flex;gap:1rem;align-items:flex-start;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:10px;padding:.9rem 1.15rem;transition:border-color .2s}
+.seq-item:hover{border-color:var(--teal)}
+.seq-n{width:30px;height:30px;border-radius:8px;background:rgba(0,200,200,.18);border:1px solid rgba(0,200,200,.38);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.8rem;color:var(--teal-l);flex-shrink:0;margin-top:.05rem}
+.seq-t{font-weight:800;font-size:.9rem;color:var(--white)}
+.seq-s{font-size:.78rem;color:var(--teal-l);font-family:'Fira Code',monospace;font-weight:600;margin:.1rem 0 .25rem}
+.seq-d{font-size:.82rem;color:var(--text-mid)}
+
+/* FAQ */
+.faq{display:flex;flex-direction:column;gap:.5rem}
+.faq-item{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;overflow:hidden;transition:border-color .2s}
+.faq-item.open{border-color:rgba(0,200,200,.45)}
+.faq-q{padding:1.05rem 1.3rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:1rem;font-weight:800;font-size:.92rem;color:var(--white);user-select:none}
+.faq-q:hover{background:rgba(0,200,200,.05)}
+.faq-arr{color:var(--teal);font-size:1.1rem;transition:transform .25s;flex-shrink:0}
+.faq-item.open .faq-arr{transform:rotate(180deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.faq-item.open .faq-a{max-height:500px}
+.faq-a-inner{padding:.9rem 1.3rem 1.1rem;font-size:.88rem;color:var(--text-mid);line-height:1.65;border-top:1px solid rgba(0,200,200,.1)}
+.faq-a-inner code{font-family:'Fira Code',monospace;font-size:.85em;background:rgba(0,200,200,.13);color:var(--teal-l);padding:.07em .38em;border-radius:3px}
+.faq-a-inner strong{color:var(--white)}
+
+/* SXS */
+.sxs{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+.sxs-label{font-size:.74rem;font-weight:800;letter-spacing:.06em;font-family:'Fira Code',monospace;padding:.28rem .6rem;border-radius:6px;margin-bottom:.6rem;display:inline-block}
+.sl-bad{background:rgba(239,68,68,.1);color:var(--red-l);border:1px solid rgba(239,68,68,.3)}
+.sl-ok{background:rgba(16,185,129,.1);color:var(--green-l);border:1px solid rgba(16,185,129,.3)}
+
+/* PROMISE */
+.promise{display:flex;align-items:flex-start;gap:.9rem;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:13px;padding:1.25rem 1.35rem;transition:border-color .22s,transform .22s,box-shadow .22s}
+.promise:hover{border-color:var(--teal);transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,200,200,.16)}
+.p-num{width:38px;height:38px;border-radius:10px;background:rgba(0,200,200,.16);border:1px solid rgba(0,200,200,.36);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1rem;color:var(--teal-l);flex-shrink:0}
+.p-t{font-weight:900;font-size:.96rem;color:var(--white);margin-bottom:.3rem}
+.p-d{font-size:.85rem;color:var(--text-mid);line-height:1.6}
+.p-d code{font-family:'Fira Code',monospace;font-size:.85em;background:rgba(0,0,0,.3);color:var(--teal-l);padding:.05em .35em;border-radius:3px}
+
+/* REF */
+.ref-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+@media(max-width:800px){.ref-grid{grid-template-columns:1fr}}
+.ref-card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;padding:1.05rem 1.2rem;text-decoration:none;display:flex;flex-direction:column;gap:.35rem;transition:border-color .2s,transform .2s}
+.ref-card:hover{border-color:var(--teal);transform:translateY(-2px)}
+.ref-q{font-size:.83rem;color:var(--text-mid)}
+.ref-doc{font-family:'Fira Code',monospace;font-size:.76rem;color:var(--teal-l);font-weight:700}
+
+/* FOOTER */
+footer{padding:2.5rem 2rem;border-top:1px solid var(--border);text-align:center;color:var(--dim);font-size:.82rem}
+footer a{color:var(--teal-l);text-decoration:none}
+footer a:hover{color:var(--teal)}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nb">COMPASS</div>
+  <div class="nl">
+    <a href="#hero">Intro</a>
+    <a href="#problem">Problem</a>
+    <a href="#solution">Architecture</a>
+    <a href="#promises">Promises</a>
+    <a href="#variants">Variants</a>
+    <a href="#onboarding">Onboarding</a>
+    <a href="#flow">Flow</a>
+    <a href="#nodomain">No Domain</a>
+    <a href="#tradeoffs">Tradeoffs</a>
+    <a href="#faq">FAQ</a>
+    <a href="#sequence">Sequence</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hbg"></div>
+  <div class="hgrid"></div>
+  <div class="hinner">
+    <div class="badge">ARCHITECTURE BRIEF &nbsp;·&nbsp; ENG LEAD + TEAM &nbsp;·&nbsp; 10-MIN READ</div>
+    <h1 class="htitle">Compass</h1>
+    <p class="hsub">A multi-region Android banking architecture that eliminates conditional-logic sprawl through a strict module DAG, login-time variant binding, and polymorphic policy interfaces.</p>
+    <div class="hpills">
+      <div class="hpill"><span class="hpill-n">8</span><span class="hpill-l">Module shapes</span></div>
+      <div class="hpill"><span class="hpill-n">0</span><span class="hpill-l">:features edits / new variant</span></div>
+      <div class="hpill"><span class="hpill-n">~10</span><span class="hpill-l">Files per variant</span></div>
+      <div class="hpill"><span class="hpill-n">+2</span><span class="hpill-l">Lines to onboard</span></div>
+    </div>
+    <div class="hbtns">
+      <a href="#solution" class="btn btn-p">See Architecture ↓</a>
+      <a href="#faq" class="btn btn-o">FAQ</a>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section id="problem" class="alt">
+  <div class="wrap">
+    <div class="lbl">The Problem</div>
+    <h2 class="h2">Conditional Logic Sprawl</h2>
+    <p class="sub">Every new market means adding branches to every existing feature. Regression risk grows as <strong style="color:var(--gold-l)">O(banks × features)</strong>.</p>
+    <div class="cwin" style="max-width:660px;margin-bottom:2rem">
+      <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">TransferViewModel.kt — the anti-pattern</span></div>
+      <div class="cwin-body"><pre><span class="kw">if</span> (bank == <span class="s">"KH"</span>) { … }         <span class="cm">// ← scattered across every flow</span>
+<span class="kw">else if</span> (bank == <span class="s">"VN"</span>) { … }    <span class="cm">// ← scattered across every flow</span>
+<span class="kw">else if</span> (bank == <span class="s">"PPC"</span>) { … }   <span class="cm">// ← scattered across every flow</span>
+<span class="kw">else</span> { <span class="cm">/* MY, TH, ID, … */</span> }
+
+<span class="cm">// Regression risk = O(banks × features)</span></pre></div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Approach we rejected</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td><code>if (bank == "X")</code> chains</td><td>One PR touches every flow — merge conflicts, hidden regressions</td></tr>
+          <tr><td>One APK per bank</td><td>Cherry-picks across N branches; CI/store-listing matrix explodes</td></tr>
+          <tr><td>Runtime DI hot-swap</td><td>Costly machinery for a flow users never actually take</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section id="solution">
+  <div class="wrap">
+    <div class="lbl">The Solution</div>
+    <h2 class="h2">A Layered Module DAG</h2>
+    <p class="sub">8 module shapes with a strict dependency DAG. Depend upward, never sideways. Forbidden imports enforced at compile time.</p>
+    <div class="dag-wrap">
+      <svg class="dag" viewBox="0 0 920 430" width="920" height="430" aria-label="Module dependency graph">
+        <defs>
+          <marker id="arr"    markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="rgba(0,200,200,.6)"/></marker>
+          <marker id="arr-g"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="rgba(255,185,64,.6)"/></marker>
+          <marker id="arr-p"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="rgba(168,85,247,.5)"/></marker>
+          <marker id="arr-b"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="rgba(59,130,246,.5)"/></marker>
+          <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <!-- layer labels -->
+        <text x="10" y="68"  fill="rgba(0,200,200,.4)" font-size="9.5" font-family="Fira Code,monospace" font-weight="700">INFRASTRUCTURE</text>
+        <text x="10" y="172" fill="rgba(0,200,200,.4)" font-size="9.5" font-family="Fira Code,monospace" font-weight="700">CONTRACTS</text>
+        <text x="10" y="278" fill="rgba(0,200,200,.4)" font-size="9.5" font-family="Fira Code,monospace" font-weight="700">IMPLEMENTATIONS</text>
+        <text x="10" y="385" fill="rgba(0,200,200,.4)" font-size="9.5" font-family="Fira Code,monospace" font-weight="700">ORCHESTRATOR</text>
+        <!-- :aos-core -->
+        <g filter="url(#glow)">
+          <rect x="355" y="28" width="210" height="52" rx="10" fill="#0C1E3E" stroke="rgba(0,200,200,.65)" stroke-width="1.8"/>
+          <text x="460" y="49" text-anchor="middle" fill="#33DDDD" font-size="13.5" font-family="Fira Code,monospace" font-weight="800">:aos-core</text>
+          <text x="460" y="68" text-anchor="middle" fill="#9CB0CF" font-size="10" font-family="Inter,sans-serif">HTTP · Security · Storage · Logs</text>
+        </g>
+        <!-- :core -->
+        <rect x="175" y="138" width="175" height="52" rx="10" fill="#0C1E3E" stroke="rgba(0,200,200,.55)" stroke-width="1.6"/>
+        <text x="262" y="159" text-anchor="middle" fill="#33DDDD" font-size="13" font-family="Fira Code,monospace" font-weight="800">:core</text>
+        <text x="262" y="178" text-anchor="middle" fill="#9CB0CF" font-size="10" font-family="Inter,sans-serif">Interfaces · Models · MVI · Scope</text>
+        <!-- :design-system -->
+        <rect x="555" y="138" width="200" height="52" rx="10" fill="#180E38" stroke="rgba(168,85,247,.55)" stroke-width="1.6"/>
+        <text x="655" y="159" text-anchor="middle" fill="#C084FC" font-size="13" font-family="Fira Code,monospace" font-weight="800">:design-system</text>
+        <text x="655" y="178" text-anchor="middle" fill="#9CB0CF" font-size="10" font-family="Inter,sans-serif">Theme · Composables · Tokens</text>
+        <!-- :data -->
+        <rect x="80" y="245" width="132" height="48" rx="9" fill="#0C1E3E" stroke="rgba(59,130,246,.5)" stroke-width="1.5"/>
+        <text x="146" y="265" text-anchor="middle" fill="#60A5FA" font-size="12.5" font-family="Fira Code,monospace" font-weight="800">:data</text>
+        <text x="146" y="283" text-anchor="middle" fill="#9CB0CF" font-size="9.5" font-family="Inter,sans-serif">Fintech*Api · Repos</text>
+        <!-- :variants-{id} -->
+        <rect x="228" y="245" width="162" height="48" rx="9" fill="#1A0E30" stroke="rgba(255,185,64,.45)" stroke-width="1.5"/>
+        <text x="309" y="265" text-anchor="middle" fill="#FFCF73" font-size="12" font-family="Fira Code,monospace" font-weight="800">:variants-{id}</text>
+        <text x="309" y="283" text-anchor="middle" fill="#9CB0CF" font-size="9.5" font-family="Inter,sans-serif">Policies · DI only</text>
+        <!-- :features -->
+        <rect x="408" y="245" width="132" height="48" rx="9" fill="#0C1E3E" stroke="rgba(0,200,200,.45)" stroke-width="1.5"/>
+        <text x="474" y="265" text-anchor="middle" fill="#33DDDD" font-size="12.5" font-family="Fira Code,monospace" font-weight="800">:features</text>
+        <text x="474" y="283" text-anchor="middle" fill="#9CB0CF" font-size="9.5" font-family="Inter,sans-serif">Logic-Blind UI</text>
+        <!-- :features-chatbot -->
+        <rect x="555" y="245" width="152" height="48" rx="9" fill="#0C1E3E" stroke="rgba(0,200,200,.35)" stroke-width="1.5"/>
+        <text x="631" y="265" text-anchor="middle" fill="#33DDDD" font-size="11.5" font-family="Fira Code,monospace" font-weight="800">:features-chatbot</text>
+        <text x="631" y="283" text-anchor="middle" fill="#9CB0CF" font-size="9.5" font-family="Inter,sans-serif">Heavy-SDK isolation</text>
+        <!-- :features-{name} -->
+        <rect x="720" y="245" width="152" height="48" rx="9" fill="#0C1E3E" stroke="rgba(0,200,200,.3)" stroke-width="1.5"/>
+        <text x="796" y="265" text-anchor="middle" fill="#33DDDD" font-size="11.5" font-family="Fira Code,monospace" font-weight="800">:features-{name}</text>
+        <text x="796" y="283" text-anchor="middle" fill="#9CB0CF" font-size="9.5" font-family="Inter,sans-serif">Variant-locked features</text>
+        <!-- :app -->
+        <rect x="335" y="358" width="250" height="52" rx="10" fill="#130F24" stroke="rgba(255,185,64,.6)" stroke-width="1.8"/>
+        <text x="460" y="379" text-anchor="middle" fill="#FFCF73" font-size="13.5" font-family="Fira Code,monospace" font-weight="800">:app</text>
+        <text x="460" y="398" text-anchor="middle" fill="#9CB0CF" font-size="10" font-family="Inter,sans-serif">BootCoordinator · LoggedInComponent · Nav</text>
+        <!-- arrows: foundations → :aos-core -->
+        <line x1="262" y1="138" x2="405" y2="82" stroke="rgba(0,200,200,.5)" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="655" y1="138" x2="520" y2="82" stroke="rgba(0,200,200,.5)" stroke-width="1.5" marker-end="url(#arr)"/>
+        <!-- arrows: impls → :core -->
+        <line x1="146" y1="245" x2="215" y2="192" stroke="rgba(59,130,246,.5)" stroke-width="1.5" marker-end="url(#arr-b)"/>
+        <line x1="309" y1="245" x2="295" y2="192" stroke="rgba(255,185,64,.5)" stroke-width="1.5" marker-end="url(#arr-g)"/>
+        <line x1="474" y1="245" x2="345" y2="192" stroke="rgba(0,200,200,.5)" stroke-width="1.5" marker-end="url(#arr)"/>
+        <!-- arrows: :features* → :design-system -->
+        <line x1="474" y1="245" x2="605" y2="192" stroke="rgba(168,85,247,.4)" stroke-width="1.5" marker-end="url(#arr-p)"/>
+        <line x1="631" y1="245" x2="655" y2="192" stroke="rgba(168,85,247,.4)" stroke-width="1.5" marker-end="url(#arr-p)"/>
+        <line x1="796" y1="245" x2="720" y2="192" stroke="rgba(168,85,247,.35)" stroke-width="1.5" marker-end="url(#arr-p)"/>
+        <!-- arrows: :app → everything -->
+        <line x1="460" y1="358" x2="150" y2="295" stroke="rgba(255,185,64,.35)" stroke-width="1.4" marker-end="url(#arr-g)"/>
+        <line x1="460" y1="358" x2="316" y2="295" stroke="rgba(255,185,64,.38)" stroke-width="1.4" marker-end="url(#arr-g)"/>
+        <line x1="460" y1="358" x2="460" y2="295" stroke="rgba(255,185,64,.5)"  stroke-width="1.4" marker-end="url(#arr-g)"/>
+        <line x1="460" y1="358" x2="615" y2="295" stroke="rgba(255,185,64,.32)" stroke-width="1.4" marker-end="url(#arr-g)"/>
+        <line x1="460" y1="358" x2="765" y2="295" stroke="rgba(255,185,64,.28)" stroke-width="1.4" marker-end="url(#arr-g)"/>
+      </svg>
+    </div>
+    <div class="callout co-info" style="margin-top:1.25rem">
+      <div class="co-ico">↑</div>
+      <div>
+        <div class="co-t">Arrows mean "depends on"</div>
+        <div class="co-b">Siblings <code>:data</code>, <code>:variants-*</code>, <code>:features</code>, <code>:features-chatbot</code>, <code>:features-{name}</code> never import each other. <code>:core</code> and <code>:design-system</code> are peers — neither depends on the other. All forbidden imports are enforced at compile time via Gradle module boundaries.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROMISES -->
+<section id="promises" class="alt">
+  <div class="wrap">
+    <div class="lbl">Four Promises</div>
+    <h2 class="h2">What the architecture guarantees</h2>
+    <p class="sub">Not aspirational — every promise is enforced by a mechanical invariant at compile or boot time.</p>
+    <div class="grid" style="gap:1rem;margin-top:1.25rem">
+      <div class="promise">
+        <div class="p-num">1</div>
+        <div><div class="p-t">Server-side demux</div><div class="p-d">One backend handles per-user routing. No <code>KhBakongApi</code> on the client. The <code>Fintech*Api</code> family is unified — the server dispatches per auth token.</div></div>
+      </div>
+      <div class="promise">
+        <div class="p-num">2</div>
+        <div><div class="p-t">Login-once binding</div><div class="p-d"><code>LoggedInComponent</code> is built once at login with the active variant's policy bindings, then dropped at logout. No runtime swap, no purge sequence.</div></div>
+      </div>
+      <div class="promise">
+        <div class="p-num">3</div>
+        <div><div class="p-t">MG bootstrap</div><div class="p-d">Only the MG URL is hardcoded. Real backend URLs, maintenance state, and version floors come from MG at cold start — no <code>production.json</code> baked into the binary.</div></div>
+      </div>
+      <div class="promise">
+        <div class="p-num">4</div>
+        <div><div class="p-t">Additive variant onboarding</div><div class="p-d">New variant = new module + <strong>2 lines</strong>. Zero changes to <code>:features</code>, <code>:data</code>, <code>:design-system</code>, or sibling variants. Compile-time enforced.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VARIANTS -->
+<section id="variants">
+  <div class="wrap">
+    <div class="lbl">Variant Snapshot</div>
+    <h2 class="h2">Same interface, different content</h2>
+    <p class="sub">~10 small files per variant. Identical <code class="i">:core</code> interfaces. Completely different business content. Adding VN required zero edits to KH.</p>
+    <div class="vc-grid">
+      <div class="vc-card">
+        <div class="vc-head" style="background:linear-gradient(135deg,rgba(0,200,200,.08),transparent)">
+          <span class="vc-flag">🇰🇭</span>
+          <div><div class="vc-name">KH — Cambodia</div><div class="vc-tag">:variants-kh</div></div>
+        </div>
+        <div class="vc-rows">
+          <div class="vc-row"><div class="vc-rl">Daily limit</div><div class="vc-rv">4,000,000 KHR <span style="color:var(--dim);font-size:.82rem">≈ $1,000</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Minimum transfer</div><div class="vc-rv">None</div></div>
+          <div class="vc-row"><div class="vc-rl">External fee</div><div class="vc-rv">Flat 0.5%</div></div>
+          <div class="vc-row"><div class="vc-rl">Error language</div><div class="vc-rv">English</div></div>
+          <div class="vc-row"><div class="vc-rl">KHQR rail</div><div class="vc-rv"><span class="vc-check">✓ Supported</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Cardless ATM</div><div class="vc-rv"><span class="vc-cross">✗ Not supported</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Bilingual receipt</div><div class="vc-rv"><span class="vc-check">✓ KH + EN</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Amount format</div><div class="vc-rv" style="font-family:'Fira Code',monospace">"1,234,567៛"</div></div>
+          <div class="vc-row"><div class="vc-rl">Support</div><div class="vc-rv">+855 23 999 999<br><span style="color:var(--dim);font-size:.82rem">Mon–Fri 8a–8p ICT</span></div></div>
+        </div>
+      </div>
+      <div class="vc-card">
+        <div class="vc-head" style="background:linear-gradient(135deg,rgba(255,185,64,.07),transparent)">
+          <span class="vc-flag">🇻🇳</span>
+          <div><div class="vc-name">VN — Vietnam</div><div class="vc-tag">:variants-vn</div></div>
+        </div>
+        <div class="vc-rows">
+          <div class="vc-row"><div class="vc-rl">Daily limit</div><div class="vc-rv">500,000,000 VND <span style="color:var(--dim);font-size:.82rem">≈ $20,000</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Minimum transfer</div><div class="vc-rv">10,000 VND <span style="color:var(--dim);font-size:.82rem">(regulator req.)</span></div></div>
+          <div class="vc-row"><div class="vc-rl">External fee</div><div class="vc-rv">7,700 VND ≤ 500k · 0.05% above</div></div>
+          <div class="vc-row"><div class="vc-rl">Error language</div><div class="vc-rv">Vietnamese</div></div>
+          <div class="vc-row"><div class="vc-rl">KHQR rail</div><div class="vc-rv"><span class="vc-cross">✗ Uses VietQR instead</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Cardless ATM</div><div class="vc-rv"><span class="vc-check">✓ Supported</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Bilingual receipt</div><div class="vc-rv"><span class="vc-cross">✗ Not supported</span></div></div>
+          <div class="vc-row"><div class="vc-rl">Amount format</div><div class="vc-rv" style="font-family:'Fira Code',monospace">"1.234.567₫"</div></div>
+          <div class="vc-row"><div class="vc-rl">Support</div><div class="vc-rv">+84 24 7300 8000<br><span style="color:var(--dim);font-size:.82rem">Mon–Sat 8a–9p ICT</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout co-gold" style="margin-top:1.4rem">
+      <div class="co-ico">★</div>
+      <div>
+        <div class="co-t">Every cell is a typed return value from a :core interface</div>
+        <div class="co-b">KH and VN each provide their own implementation class. <code>:features</code> calls the interface — it never names either class. Full code in <code>docs/07-variants.md § 5.9</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ONBOARDING -->
+<section id="onboarding" class="alt">
+  <div class="wrap">
+    <div class="lbl">Onboarding Cost</div>
+    <h2 class="h2">Adding <code class="i">:variants-my</code></h2>
+    <p class="sub">The actual line count for a new market. Every zero is compile-time enforced.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>File / module touched</th><th style="width:210px">Lines changed</th></tr></thead>
+        <tbody>
+          <tr><td>New <code>:variants-my</code> module</td><td><strong style="color:var(--gold-l)">150–250</strong> <span style="color:var(--dim)">(policy impls)</span></td></tr>
+          <tr><td><code>settings.gradle.kts</code></td><td><strong style="color:var(--gold-l)">+1</strong></td></tr>
+          <tr><td><code>:app/variant/VariantCatalogue.kt</code></td><td><strong style="color:var(--gold-l)">+1</strong></td></tr>
+          <tr><td><strong>:features</strong></td><td><span class="zero">0</span></td></tr>
+          <tr><td><strong>:data</strong></td><td><span class="zero">0</span></td></tr>
+          <tr><td><strong>:design-system</strong></td><td><span class="zero">0</span></td></tr>
+          <tr><td><strong>Other variants</strong></td><td><span class="zero">0</span></td></tr>
+          <tr><td><strong>:core</strong></td><td><span class="zero">0</span> <span style="color:var(--dim);font-size:.82rem">(unless adding a new policy interface)</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- WORKED FLOW -->
+<section id="flow">
+  <div class="wrap">
+    <div class="lbl">Worked Flow</div>
+    <h2 class="h2">KH user submits a transfer</h2>
+    <p class="sub">Trace the happy path from tap to backend. Notice what each layer does <em>not</em> know.</p>
+    <div class="sxs" style="align-items:start">
+      <div class="flow">
+        <div class="fstep">
+          <div class="fstep-left"><div class="fstep-num">1</div><div class="fstep-line"></div></div>
+          <div class="fstep-body"><div class="fstep-t">Submit tap</div><div class="fstep-d">User taps "Submit". A <code>UiEvent.Submit</code> is emitted — no business logic in the Composable.</div></div>
+        </div>
+        <div class="fstep">
+          <div class="fstep-left"><div class="fstep-num">2</div><div class="fstep-line"></div></div>
+          <div class="fstep-body"><div class="fstep-t">TransferInputViewModel</div><div class="fstep-d">No use-case wrapper. Holds a <code>TransferAmountPolicy</code> and a <code>TransferRepository</code> — <strong>no concrete types, no variant names</strong>.</div></div>
+        </div>
+        <div class="fstep">
+          <div class="fstep-left"><div class="fstep-num">3</div><div class="fstep-line"></div></div>
+          <div class="fstep-body"><div class="fstep-t">KhTransferAmountPolicy</div><div class="fstep-d">Hilt resolves the interface → <code>KhTransferAmountPolicy</code> from <code>:variants-kh</code>. The VM called the interface; the variant answered.</div></div>
+        </div>
+        <div class="fstep">
+          <div class="fstep-left"><div class="fstep-num">4</div><div class="fstep-line"></div></div>
+          <div class="fstep-body"><div class="fstep-t">FintechTransferRepo</div><div class="fstep-d">Hilt resolves <code>TransferRepository</code> → <code>FintechTransferRepo</code> from <code>:data</code>. One impl for all variants.</div></div>
+        </div>
+        <div class="fstep">
+          <div class="fstep-left"><div class="fstep-num">5</div></div>
+          <div class="fstep-body" style="padding-bottom:0"><div class="fstep-t">POST /v1/transfer/submit</div><div class="fstep-d"><code>Authorization: Bearer …</code> + <code>X-Account-Id: acc-001</code>. Backend routes to Bakong rail — <strong>server-side dispatch</strong>.</div></div>
+        </div>
+      </div>
+      <div class="cwin">
+        <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">TransferInputViewModel.kt</span></div>
+        <div class="cwin-body"><pre><span class="kw">@HiltViewModel</span>
+<span class="kw">class</span> TransferInputViewModel <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> policy: TransferAmountPolicy,  <span class="cm">// :core</span>
+    <span class="kw">private val</span> repo:   TransferRepository,     <span class="cm">// :core</span>
+) : MviViewModel&lt;…&gt;() {
+
+    <span class="kw">private fun</span> <span class="fn">onSubmit</span>() = viewModelScope.<span class="fn">launch</span> {
+        <span class="kw">when</span> (<span class="kw">val</span> v = policy.<span class="fn">validate</span>(state.value.amount)) {
+            <span class="kw">is</span> Invalid -&gt; <span class="fn">setState</span> { <span class="fn">copy</span>(error = v.reason) }
+            Valid      -&gt; repo.<span class="fn">submit</span>(state.value.intent)
+                              .<span class="fn">fold</span>(…)
+        }
+    }
+}
+
+<span class="cm">// UI didn't know KH.</span>
+<span class="cm">// Repo didn't know KH.</span>
+<span class="cm">// Server figured it out from auth.</span></pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NO DOMAIN -->
+<section id="nodomain" class="alt">
+  <div class="wrap">
+    <div class="lbl">Design Decision</div>
+    <h2 class="h2">No <code class="i">:domain</code> module · no use cases</h2>
+    <p class="sub"><code class="i">:core</code> already owns contracts and models. Variability lives in <code class="i">:variants-*/policy/</code>. A use-case layer adds classes without adding flexibility.</p>
+
+    <div class="sxs" style="margin-bottom:1.75rem">
+      <div>
+        <span class="sxs-label sl-bad">❌ Common "Clean Architecture"</span>
+        <div class="cwin">
+          <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">module tree</span></div>
+          <div class="cwin-body"><pre>:app
+ ↑
+:presentation    UI + ViewModel
+ ↑
+:domain          use cases + interfaces
+ ↑
+:data            repo impls</pre></div>
+        </div>
+      </div>
+      <div>
+        <span class="sxs-label sl-ok">✅ Compass</span>
+        <div class="cwin">
+          <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">module tree</span></div>
+          <div class="cwin-body"><pre>:app
+ ↑
+:features         UI + ViewModel
+ ↑
+:core             contracts + models
+ ↑         ↑
+:data      :variants-*
+(impls)    (policies — variability)</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sxs" style="margin-bottom:1.75rem">
+      <div>
+        <span class="sxs-label sl-bad">❌ With a use case layer</span>
+        <div class="cwin">
+          <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">SubmitTransferUseCase.kt</span></div>
+          <div class="cwin-body"><pre><span class="kw">class</span> SubmitTransferUseCase <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> policy: TransferAmountPolicy,
+    <span class="kw">private val</span> repo:   TransferRepository,
+) {
+    <span class="kw">suspend operator fun</span> <span class="fn">invoke</span>(
+        intent: TransferIntent
+    ): Result&lt;TransferReceipt&gt; =
+        <span class="kw">when</span> (<span class="kw">val</span> v = policy.<span class="fn">validate</span>(intent.amount)) {
+            <span class="kw">is</span> Invalid -&gt; Result.<span class="fn">failure</span>(ValidationException(v))
+            Valid      -&gt; repo.<span class="fn">submit</span>(intent)
+        }
+}
+<span class="cm">// VM now just wraps the use case — hides both</span>
+<span class="kw">class</span> TransferInputViewModel <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> submit: SubmitTransferUseCase,
+) : MviViewModel&lt;…&gt;() { … }</pre></div>
+        </div>
+      </div>
+      <div>
+        <span class="sxs-label sl-ok">✅ Compass — VM composes directly</span>
+        <div class="cwin">
+          <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">TransferInputViewModel.kt</span></div>
+          <div class="cwin-body"><pre><span class="kw">class</span> TransferInputViewModel <span class="kw">@Inject constructor</span>(
+    <span class="kw">private val</span> policy: TransferAmountPolicy,
+    <span class="kw">private val</span> repo:   TransferRepository,
+) : MviViewModel&lt;…&gt;() {
+
+    <span class="kw">private fun</span> <span class="fn">onSubmit</span>() = viewModelScope.<span class="fn">launch</span> {
+        <span class="kw">when</span> (<span class="kw">val</span> v = policy.<span class="fn">validate</span>(state.value.amount)) {
+            <span class="kw">is</span> Invalid -&gt; <span class="fn">setState</span> { <span class="fn">copy</span>(error = v.reason) }
+            Valid      -&gt; repo.<span class="fn">submit</span>(state.value.intent)
+                              .<span class="fn">fold</span>(…)
+        }
+    }
+}</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;color:var(--white);margin-bottom:.85rem">What a use case layer promises — Compass already delivers via</h3>
+    <div class="tbl-wrap" style="margin-bottom:1.5rem">
+      <table>
+        <thead><tr><th>Promised benefit</th><th>Compass delivers it via</th></tr></thead>
+        <tbody>
+          <tr><td>Reusable business rules across screens</td><td><strong>Policies</strong> — injectable wherever needed</td></tr>
+          <tr><td>Variant-specific behavior</td><td><strong>:variants-{id}</strong> — one policy impl set per variant</td></tr>
+          <tr><td>Pure JVM-testable logic, no fixtures</td><td><strong>Policies</strong> — no Android, no Hilt, no Compose</td></tr>
+          <tr><td>ViewModel kept thin</td><td>Rules live in policies; VM only sequences (~5–15 lines)</td></tr>
+          <tr><td>UI insulated from impls</td><td><strong>:core interfaces</strong> — :features never names a :data or :variants-* class</td></tr>
+          <tr><td>I/O decoupled from rules</td><td><strong>Repository</strong> (I/O) vs <strong>Policy</strong> (rules) — the split already exists</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:1.05rem;font-weight:900;color:var(--white);margin-bottom:.85rem">For iOS readers — VIPER without the Interactor</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>iOS / VIPER</th><th>Compass equivalent</th></tr></thead>
+        <tbody>
+          <tr><td>VIPER <strong>Interactor</strong> / Clean Swift <strong>Worker</strong></td><td><strong>Repository</strong> (I/O) + <strong>Policy</strong> (rules); VM composes both</td></tr>
+          <tr><td><strong>Use Case</strong> per action</td><td>No equivalent — ~5 lines in the VM</td></tr>
+          <tr><td><code>Wireframe</code> / <code>Router</code></td><td>Compose <code>NavController</code> + per-feature <code>*Navigator.kt</code></td></tr>
+          <tr><td><code>Presenter</code></td><td><code>MviViewModel&lt;S, E, F&gt;</code> — UiState / UiEvent / UiEffect</td></tr>
+          <tr><td>Per-region build targets / schemes</td><td>One binary; variant policies bound at login via Hilt multibindings</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- TRADEOFFS -->
+<section id="tradeoffs">
+  <div class="wrap">
+    <div class="lbl">Tradeoffs</div>
+    <h2 class="h2">What we accept — and why</h2>
+    <div class="grid g3" style="margin-top:1.5rem">
+      <div class="card">
+        <div class="card-h"><span class="card-i">📦</span><span class="card-t">Slightly larger APK</span></div>
+        <div class="card-b">Variants are ~10 files each. Compiling all into one binary adds negligible size. Split-APK delivery handles store distribution if it matters.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">📐</span><span class="card-t">Convention-based feature boundaries</span></div>
+        <div class="card-b"><code>:features</code> uses package-level boundaries, not Gradle modules per screen. Lint enforces the contract. Build-performance wins justify this — see <code>docs/14-build-performance.md</code>.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="card-i">🔄</span><span class="card-t">Variant change = logout → login</span></div>
+        <div class="card-b">Runtime DI swap is costly machinery for a flow that doesn't exist in banking apps. Login-once binding is the correct model for this domain.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="alt">
+  <div class="wrap">
+    <div class="lbl">FAQ</div>
+    <h2 class="h2">Common questions</h2>
+    <div class="faq" style="margin-top:1.5rem">
+      <div class="faq-item">
+        <div class="faq-q">Can a user log in to different banks on the same device?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner"><strong>Yes.</strong> Logout drops the session graph (<code>LoggedInComponent</code>, prefs, cache) and pops navigation to root. The next login rebuilds with whatever <code>variantId</code> the server returns. No special code path.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What about per-bank branding (logos, colors)?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Future-roadmap. Branding is intentionally <strong>not</strong> in <code>RuntimeConfig</code>. Per-variant theming is a separate mechanism that does not affect any existing module boundaries.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What if our next project isn't multi-tenant?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Drop <code>:variants-{id}</code>. Everything else — <code>:aos-core</code>, <code>:core</code>, <code>:design-system</code>, <code>:data</code>, <code>:features</code>, MG bootstrap, <code>LoggedInComponent</code> — is reusable as a clean modular Android stack.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What if a variant grows to need its own UI, API, or screens?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner">Goes in a sibling module: <code>:features-{feature-name}</code> (e.g. <code>:features-bakong-disputes</code>), gated by a <code>VariantCapabilities</code> flag. The variant module stays pure — policies + DI only.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Where do use cases / interactors live?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner"><strong>There are none.</strong> ViewModel composes a <code>:core</code> policy + a <code>:core</code> repository directly — typically 5–15 lines. A <code>*UseCase</code> wrapper adds a class to maintain with zero new flexibility.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Why no separate :domain module?<span class="faq-arr">▾</span></div>
+        <div class="faq-a"><div class="faq-a-inner"><code>:core</code> already owns contracts + domain models. Variability lives in <code>:variants-*/policy/</code>. Splitting into a <code>:domain</code> module adds indirection without adding isolation — the forbidden import rules already enforce that <code>:features</code> can't reach <code>:data</code> or <code>:variants-*</code>.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SEQUENCE -->
+<section id="sequence">
+  <div class="wrap">
+    <div class="lbl">Status &amp; Sequence</div>
+    <h2 class="h2">Implementation order</h2>
+    <p class="sub">Architecture spec: <strong style="color:var(--green-l)">complete</strong> — 18 docs in <code class="i">docs/</code>. Implementation: <strong style="color:var(--gold-l)">not started</strong>. Build top-to-bottom; each module compiles against only already-built ones.</p>
+    <div class="seq">
+      <div class="seq-item"><div class="seq-n">1</div><div><div class="seq-t">:aos-core</div><div class="seq-s">vendor or new submodule</div><div class="seq-d">OkHttp, cert pinning, DataStore, logging. Banking-agnostic.</div></div></div>
+      <div class="seq-item"><div class="seq-n">2</div><div><div class="seq-t">:core</div><div class="seq-s">interfaces · models · RuntimeConfig · Session</div><div class="seq-d">All domain contracts, models, MVI base classes, <code>@LoggedInScoped</code>. Zero implementations.</div></div></div>
+      <div class="seq-item"><div class="seq-n">3</div><div><div class="seq-t">:design-system</div><div class="seq-s">theme + first components</div><div class="seq-d"><code>CompassTheme</code>, <code>CompassButton</code>, <code>CompassTextField</code>. No banking types, no <code>:core</code> dependency.</div></div></div>
+      <div class="seq-item"><div class="seq-n">4</div><div><div class="seq-t">:data</div><div class="seq-s">Fintech*Api family + first repo: auth</div><div class="seq-d">Retrofit surface split by feature area. One repo per <code>:core</code> interface. Variant-agnostic.</div></div></div>
+      <div class="seq-item"><div class="seq-n">5</div><div><div class="seq-t">:variants-kh</div><div class="seq-s">policies for the first market</div><div class="seq-d">~10 policy implementations + <code>KhVariantModule</code> with <code>@Binds @IntoMap @VariantKey("kh")</code>.</div></div></div>
+      <div class="seq-item"><div class="seq-n">6</div><div><div class="seq-t">:app</div><div class="seq-s">BootCoordinator + LoggedInComponent</div><div class="seq-d">MG fetch → gate → login → build <code>LoggedInComponent</code> → home. Full boot sequence.</div></div></div>
+      <div class="seq-item"><div class="seq-n">7</div><div><div class="seq-t">End-to-end flow</div><div class="seq-s">login → balance → first transfer</div><div class="seq-d">Full stack verification: auth, session graph, account display, transfer to Bakong rail.</div></div></div>
+      <div class="seq-item"><div class="seq-n" style="background:rgba(16,185,129,.18);border-color:rgba(16,185,129,.42);color:var(--green-l)">8</div><div><div class="seq-t" style="color:var(--green-l)">:variants-vn — the proof</div><div class="seq-s">canonical demo of the architecture's promise</div><div class="seq-d"><strong>Zero changes</strong> to <code>:features</code>, <code>:data</code>, or <code>:variants-kh</code>. Step 8 is the architecture's proof of correctness.</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- REFERENCE -->
+<section class="alt">
+  <div class="wrap">
+    <div class="lbl">Reference</div>
+    <h2 class="h2">Deeper documentation</h2>
+    <p class="sub">The authoritative spec lives in <code class="i">docs/</code> — 18 documents, indexed by reading order in <code class="i">README.md</code>.</p>
+    <div class="ref-grid" style="margin-top:1.25rem">
+      <a href="docs/00-overview.md" class="ref-card"><div class="ref-q">Why this architectural shape?</div><div class="ref-doc">docs/00-overview.md</div></a>
+      <a href="docs/01-module-topology.md" class="ref-card"><div class="ref-q">Dependency rules &amp; forbidden imports?</div><div class="ref-doc">docs/01-module-topology.md</div></a>
+      <a href="docs/10-boot-phases.md" class="ref-card"><div class="ref-q">Boot mechanism in detail?</div><div class="ref-doc">docs/10-boot-phases.md</div></a>
+      <a href="docs/07-variants.md" class="ref-card"><div class="ref-q">Full variant module + Hilt binding code?</div><div class="ref-doc">docs/07-variants.md</div></a>
+      <a href="docs/13-onboarding-a-variant.md" class="ref-card"><div class="ref-q">Onboarding step-by-step checklist?</div><div class="ref-doc">docs/13-onboarding-a-variant.md</div></a>
+      <a href="docs/17-project-structure.md" class="ref-card"><div class="ref-q">Full project directory tree?</div><div class="ref-doc">docs/17-project-structure.md</div></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Compass Framework — Architecture Brief &nbsp;·&nbsp; 10-min read &nbsp;·&nbsp;
+  Authoritative spec in <a href="docs/">docs/</a> &nbsp;·&nbsp; <a href="README.md">README.md</a>
+</footer>
+
+<script>
+// Nav scroll highlight
+const secs = [...document.querySelectorAll('section[id]')];
+const navLinks = [...document.querySelectorAll('.nl a')];
+function updateNav() {
+  const y = window.scrollY + 75;
+  let active = secs[0];
+  for (const s of secs) { if (s.offsetTop <= y) active = s; }
+  navLinks.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + active.id));
+}
+document.addEventListener('scroll', updateNav, {passive:true});
+updateNav();
+
+// FAQ accordion
+document.querySelectorAll('.faq-q').forEach(q => {
+  q.addEventListener('click', () => {
+    const item = q.closest('.faq-item');
+    const wasOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+    if (!wasOpen) item.classList.add('open');
+  });
+});
+</script>
+</body>
+</html>
