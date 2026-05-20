@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bizplay IPPP — Architecture Brief</title>
+<style>
+:root {
+  --navy:#0A1530; --navy-l:#142348; --bg:#050A18;
+  --teal:#00C8C8; --teal-l:#33DDDD; --teal-d:#008B8B;
+  --gold:#FFB940; --gold-l:#FFCF73;
+  --purple:#A855F7; --purple-l:#C084FC; --purple-d:#7C3AED;
+  --red:#EF4444; --red-l:#F87171;
+  --green:#10B981; --green-l:#34D399;
+  --blue:#3B82F6; --blue-l:#60A5FA;
+  --white:#FFFFFF;
+  --card:#0F1E40; --card2:#16264A; --card3:#1C2F5A;
+  --border:rgba(0,200,200,.28);
+  --text:#F1F5FB; --text-mid:#C7D5EA; --dim:#9CB0CF;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;background:rgba(5,10,24,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:.75rem 2.5rem;height:58px}
+.nb{font-size:1.05rem;font-weight:900;letter-spacing:.07em;background:linear-gradient(120deg,var(--teal),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nl{display:flex;gap:.1rem;flex-wrap:wrap}
+.nl a{color:var(--text-mid);text-decoration:none;padding:.38rem .65rem;border-radius:7px;font-size:.74rem;font-weight:700;letter-spacing:.03em;transition:color .2s,background .2s}
+.nl a:hover,.nl a.active{color:var(--teal);background:rgba(0,200,200,.14)}
+
+/* LAYOUT */
+.wrap{max-width:1240px;margin:0 auto;padding:0 2rem}
+section{padding:5rem 0;border-top:1px solid rgba(0,200,200,.07);scroll-margin-top:70px}
+section.alt{background:linear-gradient(180deg,var(--bg) 0%,#07101F 100%)}
+
+/* TYPOGRAPHY */
+.lbl{font-size:.7rem;font-weight:900;letter-spacing:.2em;color:var(--teal);text-transform:uppercase;margin-bottom:.5rem}
+.sec-title{font-size:clamp(1.7rem,3.5vw,2.5rem);font-weight:900;line-height:1.1;color:var(--white);margin-bottom:.9rem;letter-spacing:-.02em}
+.sec-sub{font-size:1rem;color:var(--text-mid);max-width:760px;margin-bottom:2rem;line-height:1.7}
+p{color:var(--text-mid);margin-bottom:1rem;line-height:1.7}
+strong{color:var(--text)}
+code.ic{font-family:'Fira Code',ui-monospace,monospace;font-size:.84em;background:rgba(0,200,200,.14);padding:.1em .42em;border-radius:4px;color:var(--teal-l)}
+
+/* HERO */
+#hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:7rem 2rem 4rem;position:relative;overflow:hidden;border-top:none}
+.hbg{position:absolute;inset:0;background:radial-gradient(ellipse 90% 65% at 50% 30%,rgba(0,200,200,.17) 0%,transparent 70%),radial-gradient(ellipse 55% 45% at 80% 70%,rgba(255,185,64,.11) 0%,transparent 60%),radial-gradient(ellipse 45% 40% at 15% 75%,rgba(168,85,247,.09) 0%,transparent 60%);pointer-events:none}
+.hgrid{position:absolute;inset:0;opacity:.04;background-image:linear-gradient(rgba(0,200,200,1) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,200,1) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
+.hinner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:.5rem;background:rgba(0,200,200,.13);border:1px solid rgba(0,200,200,.42);border-radius:50px;padding:.38rem 1rem;font-size:.75rem;font-weight:800;color:var(--teal-l);letter-spacing:.08em;margin-bottom:1.8rem;animation:fadedn .8s ease both}
+.htitle{font-size:clamp(2.8rem,7.5vw,5.5rem);font-weight:900;line-height:.98;letter-spacing:-.035em;background:linear-gradient(130deg,#fff 0%,var(--teal-l) 42%,var(--gold) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1.1rem;animation:fadedn .8s .15s ease both}
+.hsub{font-size:clamp(.95rem,1.6vw,1.14rem);color:var(--text-mid);max-width:680px;margin:0 auto 2.6rem;line-height:1.68;animation:fadedn .8s .3s ease both}
+.hpills{display:flex;flex-wrap:wrap;gap:.9rem;justify-content:center;animation:fadedn .8s .45s ease both}
+.hp{display:flex;flex-direction:column;align-items:center;gap:.3rem;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px;padding:.9rem 1.3rem;min-width:148px;cursor:default;transition:transform .25s,border-color .25s,box-shadow .25s}
+.hp:hover{transform:translateY(-5px);border-color:var(--teal);box-shadow:0 14px 30px rgba(0,200,200,.2)}
+.hp-i{font-size:1.4rem}
+.hp-t{font-size:.88rem;font-weight:800;color:var(--gold-l)}
+.hp-d{font-size:.72rem;color:var(--text-mid);text-align:center}
+.hstats{display:flex;gap:3rem;flex-wrap:wrap;justify-content:center;margin-top:3.5rem;animation:fadedn .8s .6s ease both}
+.hstat{text-align:center}
+.hstat-n{font-size:1.9rem;font-weight:900;background:linear-gradient(120deg,var(--teal-l),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1}
+.hstat-l{font-size:.68rem;color:var(--dim);text-transform:uppercase;letter-spacing:.13em;margin-top:.3rem;font-weight:700}
+
+/* CODE WINDOW */
+.cwin{background:#070D1C;border:1px solid rgba(0,200,200,.22);border-radius:12px;overflow:hidden;margin:1rem 0 1.3rem;box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.cwin-top{background:#0E1830;padding:.6rem 1rem;display:flex;align-items:center;gap:.4rem;border-bottom:1px solid rgba(0,200,200,.18)}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.dr{background:#FF5F57}.dy{background:#FFBD2E}.dg{background:#28C840}
+.cwin-lbl{font-size:.75rem;color:var(--text-mid);margin-left:.4rem;font-weight:600}
+.cwin-body{padding:1.2rem 1.4rem;font-family:'Fira Code',ui-monospace,monospace;font-size:.82rem;line-height:1.85;overflow-x:auto;color:var(--text)}
+pre{white-space:pre;font-family:inherit;margin:0}
+.kw{color:#FF87A2}.s{color:#A5D6FF}.fn{color:#D2A8FF}.v{color:#FFC182}.cm{color:#8B9FBF}.ok{color:#7EE787}.an{color:#FFD080}.cl{color:#B4F0F0}.ty{color:#79C0FF}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;margin:1.2rem 0;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;font-size:.88rem}
+th{background:rgba(0,200,200,.1);color:var(--teal-l);font-weight:800;font-size:.76rem;letter-spacing:.05em;text-transform:uppercase;padding:.8rem 1.1rem;text-align:left;border-bottom:1px solid rgba(0,200,200,.2)}
+td{padding:.8rem 1.1rem;color:var(--text-mid);border-bottom:1px solid rgba(0,200,200,.08)}
+tr:last-child td{border-bottom:none}
+td code{font-family:'Fira Code',ui-monospace,monospace;font-size:.83em;color:var(--gold-l)}
+td strong{color:var(--green-l)}
+.bad{color:var(--red-l)}
+.zero{color:var(--green-l);font-weight:800}
+
+/* CARDS */
+.cards2{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin:1.5rem 0}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px;padding:1.3rem 1.4rem;transition:transform .25s,border-color .25s,box-shadow .25s}
+.card:hover{transform:translateY(-4px);border-color:var(--teal);box-shadow:0 14px 30px rgba(0,200,200,.16)}
+.card .ct{font-weight:900;font-size:.95rem;color:var(--teal-l);margin-bottom:.5rem}
+.card .cd{font-size:.87rem;color:var(--text-mid);line-height:1.62}
+.card-gold{border-color:rgba(255,185,64,.35);background:linear-gradient(180deg,rgba(255,185,64,.07),var(--card))}
+.card-gold .ct{color:var(--gold-l)}
+
+/* CALLOUT */
+.callout{border-radius:11px;padding:1rem 1.25rem;margin:1.1rem 0;display:flex;gap:.9rem;align-items:flex-start;border:1px solid}
+.callout-warn{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.3)}
+.callout-info{background:rgba(0,200,200,.06);border-color:rgba(0,200,200,.3)}
+.callout-good{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.3)}
+.callout .ic{font-size:1.1rem;flex-shrink:0;line-height:1.5}
+.callout .cb{font-size:.9rem;color:var(--text-mid);line-height:1.65}
+.callout .cb b{color:var(--text);display:block;margin-bottom:.2rem}
+
+/* PROMISE CARDS */
+.pcard{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:1.6rem;display:flex;gap:1.2rem;transition:transform .25s,border-color .25s,box-shadow .25s}
+.pcard:hover{transform:translateY(-4px);border-color:var(--teal);box-shadow:0 16px 36px rgba(0,200,200,.18)}
+.pcard-icon{width:2.8rem;height:2.8rem;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.35rem;flex-shrink:0}
+.pcard-title{font-weight:900;font-size:.97rem;color:var(--white);margin-bottom:.45rem}
+.pcard-body{font-size:.87rem;color:var(--text-mid);line-height:1.62}
+
+/* DAG */
+.dag-wrap{background:#070D1C;border:1px solid rgba(0,200,200,.22);border-radius:14px;overflow-x:auto;padding:2rem 1.5rem 1.5rem;margin:1.5rem 0}
+.dag-row{display:flex;justify-content:center;align-items:center;gap:.7rem;margin-bottom:.3rem;flex-wrap:wrap}
+.dag-node{border-radius:9px;padding:.55rem 1.1rem;font-family:'Fira Code',ui-monospace,monospace;font-size:.8rem;font-weight:800;text-align:center;border:1.5px solid;min-width:130px;white-space:nowrap}
+.dag-arr{color:var(--teal);font-size:1.3rem;line-height:1;text-align:center;margin:.15rem 0}
+.dag-row-arr{display:flex;justify-content:center;margin:.1rem 0}
+.dag-label{font-size:.71rem;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:700;text-align:center;margin:.35rem 0 .2rem;padding:.3rem .7rem;border-top:1px solid rgba(0,200,200,.1)}
+.n-infra{background:rgba(0,200,200,.12);border-color:var(--teal);color:var(--teal-l)}
+.n-contract{background:rgba(59,130,246,.12);border-color:var(--blue-l);color:var(--blue-l)}
+.n-ds{background:rgba(168,85,247,.12);border-color:var(--purple-l);color:var(--purple-l)}
+.n-impl{background:rgba(255,185,64,.1);border-color:var(--gold);color:var(--gold-l)}
+.n-app{background:rgba(16,185,129,.12);border-color:var(--green-l);color:var(--green-l)}
+
+/* AXIS */
+.axis-box{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:13px;padding:1.4rem 1.6rem;margin:1.3rem 0}
+.axis-row{display:flex;align-items:flex-start;gap:1.2rem;padding:.85rem 0;border-bottom:1px solid rgba(0,200,200,.1)}
+.axis-row:last-child{border-bottom:none}
+.axis-badge{border-radius:7px;padding:.32rem .8rem;font-size:.78rem;font-weight:900;font-family:'Fira Code',monospace;white-space:nowrap;flex-shrink:0;margin-top:.1rem}
+.ab-v{background:rgba(0,200,200,.15);border:1px solid var(--teal);color:var(--teal-l)}
+.ab-t{background:rgba(255,185,64,.12);border:1px solid var(--gold);color:var(--gold-l)}
+.ab-a{background:rgba(168,85,247,.12);border:1px solid var(--purple);color:var(--purple-l)}
+.axis-label{font-weight:800;font-size:.88rem;color:var(--text);margin-bottom:.25rem}
+.axis-detail{font-size:.83rem;color:var(--text-mid);line-height:1.6}
+.axis-arrow{color:var(--teal);font-family:'Fira Code',monospace;font-size:.78rem;margin:.35rem 0 .1rem}
+
+/* VARIANT COMPARE */
+.vcompare{background:#070D1C;border:1px solid rgba(0,200,200,.22);border-radius:13px;overflow:hidden;margin:1.3rem 0}
+.vcompare-header{display:grid;grid-template-columns:200px 1fr 1fr;background:rgba(0,200,200,.1);border-bottom:1px solid rgba(0,200,200,.2)}
+.vch{padding:.75rem 1.1rem;font-weight:900;font-size:.8rem;color:var(--teal-l);letter-spacing:.06em;text-transform:uppercase}
+.vcompare-row{display:grid;grid-template-columns:200px 1fr 1fr;border-bottom:1px solid rgba(0,200,200,.08)}
+.vcompare-row:last-child{border-bottom:none}
+.vcompare-row:hover{background:rgba(0,200,200,.04)}
+.vc-k{padding:.7rem 1.1rem;font-size:.81rem;color:var(--dim);font-weight:600;display:flex;align-items:center}
+.vc-v{padding:.7rem 1.1rem;font-family:'Fira Code',ui-monospace,monospace;font-size:.81rem;color:var(--text-mid)}
+.vc-yes{color:var(--green-l)}
+.vc-no{color:var(--red-l)}
+.vc-section{padding:.5rem 1.1rem;font-size:.7rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);background:rgba(0,0,0,.25);grid-column:1/-1;border-bottom:1px solid rgba(0,200,200,.12)}
+
+/* FLOW */
+.flow{display:flex;flex-direction:column;margin:1.5rem 0}
+.flow-step{display:flex;gap:1rem;align-items:flex-start}
+.flow-left{display:flex;flex-direction:column;align-items:center;width:44px;flex-shrink:0}
+.flow-dot{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.9rem;color:#000;flex-shrink:0;z-index:1}
+.flow-line{width:2px;flex:1;min-height:24px;background:linear-gradient(180deg,var(--teal),rgba(0,200,200,.15))}
+.flow-content{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;flex:1;margin-bottom:.6rem;transition:border-color .2s}
+.flow-content:hover{border-color:var(--teal)}
+.flow-title{font-weight:900;font-size:.92rem;color:var(--text);margin-bottom:.3rem}
+.flow-detail{font-size:.82rem;color:var(--text-mid);line-height:1.7;font-family:'Fira Code',ui-monospace,monospace}
+.ftag{display:inline-block;border-radius:4px;padding:.07rem .42rem;font-size:.72rem;font-weight:700;margin-top:.35rem;font-family:'Fira Code',monospace;margin-right:.3rem;border:1px solid}
+.ftag-t{background:rgba(0,200,200,.12);border-color:rgba(0,200,200,.32);color:var(--teal-l)}
+.ftag-g{background:rgba(255,185,64,.11);border-color:rgba(255,185,64,.32);color:var(--gold-l)}
+.ftag-p{background:rgba(168,85,247,.11);border-color:rgba(168,85,247,.32);color:var(--purple-l)}
+.ftag-gr{background:rgba(16,185,129,.11);border-color:rgba(16,185,129,.32);color:var(--green-l)}
+
+/* CODE PAIR */
+.codepair{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 1.4rem}
+.codepair .cwin{margin:0}
+
+/* FAQ */
+.faq-item{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;margin-bottom:.7rem;overflow:hidden;transition:border-color .2s}
+.faq-item.open{border-color:rgba(0,200,200,.48)}
+.faq-q{padding:1.05rem 1.3rem;font-weight:800;font-size:.91rem;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:1rem;user-select:none}
+.faq-q:hover{color:var(--teal-l)}
+.faq-ico{color:var(--teal);font-size:1.2rem;flex-shrink:0;transition:transform .25s;line-height:1}
+.faq-item.open .faq-ico{transform:rotate(45deg)}
+.faq-a{padding:0 1.3rem 1.1rem;font-size:.89rem;color:var(--text-mid);line-height:1.7;display:none}
+.faq-item.open .faq-a{display:block}
+
+/* SEQUENCE */
+.seq{display:flex;flex-direction:column;gap:.65rem;margin:1.5rem 0}
+.seq-item{display:flex;gap:1rem;align-items:flex-start;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;padding:1.1rem 1.3rem;transition:border-color .2s,transform .2s}
+.seq-item:hover{border-color:var(--teal);transform:translateX(4px)}
+.seq-num{width:2rem;height:2rem;border-radius:50%;background:linear-gradient(135deg,var(--teal-d),var(--purple-d));display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.82rem;color:#fff;flex-shrink:0;margin-top:.1rem}
+.seq-title{font-weight:800;font-size:.93rem;color:var(--text);margin-bottom:.25rem}
+.seq-detail{font-size:.83rem;color:var(--text-mid);line-height:1.6}
+
+/* COST TABLES */
+.cost-two{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin:1.3rem 0}
+
+/* REF GRID */
+.ref-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:1rem;margin:1.5rem 0}
+.ref-card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;padding:1rem 1.25rem;transition:transform .2s,border-color .2s,box-shadow .2s;display:block;cursor:default}
+.ref-card:hover{transform:translateY(-4px);border-color:var(--teal);box-shadow:0 12px 28px rgba(0,200,200,.18)}
+.ref-q{font-size:.82rem;font-weight:700;color:var(--text-mid);margin-bottom:.42rem}
+.ref-doc{font-family:'Fira Code',ui-monospace,monospace;font-size:.79rem;font-weight:800;color:var(--teal-l)}
+.ref-arr{color:var(--gold)}
+
+/* FOOTER */
+footer{background:var(--navy);border-top:1px solid var(--border);padding:2.8rem 2rem;text-align:center}
+.fb{font-size:1.3rem;font-weight:900;background:linear-gradient(120deg,var(--teal-l),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
+.fs{color:var(--text-mid);font-size:.86rem}
+
+/* ANIMATIONS */
+@keyframes fadedn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+.fu{opacity:0;transform:translateY(26px);transition:opacity .6s ease,transform .6s ease}
+.fu.vis{opacity:1;transform:translateY(0)}
+
+/* RESPONSIVE */
+@media(max-width:1000px){.codepair{grid-template-columns:1fr}}
+@media(max-width:900px){.nl{display:none}.cards2,.cost-two{grid-template-columns:1fr}.vcompare-header,.vcompare-row{grid-template-columns:120px 1fr 1fr}}
+@media(max-width:600px){.vcompare-header,.vcompare-row{grid-template-columns:90px 1fr 1fr}.hstats{gap:1.8rem}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nb">◈ BIZPLAY IPPP</div>
+  <div class="nl">
+    <a href="#problem">Problem</a>
+    <a href="#solution">Solution</a>
+    <a href="#promises">Promises</a>
+    <a href="#axes">Axes</a>
+    <a href="#variants">Variants</a>
+    <a href="#tenants">Tenants</a>
+    <a href="#onboarding">Onboarding</a>
+    <a href="#flow">Flow</a>
+    <a href="#nodomain">No Domain</a>
+    <a href="#tradeoffs">Tradeoffs</a>
+    <a href="#faq">FAQ</a>
+    <a href="#status">Status</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hbg"></div>
+  <div class="hgrid"></div>
+  <div class="hinner wrap">
+    <div class="badge">10-MIN READ &nbsp;·&nbsp; ENG LEAD + TEAM &nbsp;·&nbsp; AUTHORITATIVE SPEC IN docs/</div>
+    <h1 class="htitle">Bizplay IPPP<br>Architecture Brief</h1>
+    <p class="hsub">The multi-tenant, multi-region Android corporate-expense framework that eliminates <code class="ic">DetailConfig.isXxx()</code> conditional sprawl through a strict layered DAG, Hilt multibindings, and login-time variant + tenant binding.</p>
+    <div class="hpills">
+      <div class="hp"><div class="hp-i">🏗</div><div class="hp-t">8 Modules</div><div class="hp-d">Strict DAG, forbidden imports enforced at compile time</div></div>
+      <div class="hp"><div class="hp-i">🌏</div><div class="hp-t">3 Variants</div><div class="hp-d">KR · KH · VN — region / regulator</div></div>
+      <div class="hp"><div class="hp-i">🏢</div><div class="hp-t">10+ Tenants</div><div class="hp-d">POSCO · Lotte · NIA · Shinsegae…</div></div>
+      <div class="hp"><div class="hp-i">🔒</div><div class="hp-t">Logic-Blind</div><div class="hp-d">:features never sees variant or tenant IDs</div></div>
+      <div class="hp"><div class="hp-i">➕</div><div class="hp-t">Additive</div><div class="hp-d">New variant = 1 module + 2 lines</div></div>
+    </div>
+    <div class="hstats">
+      <div class="hstat"><div class="hstat-n">~124</div><div class="hstat-l">DetailConfig call sites to eliminate</div></div>
+      <div class="hstat"><div class="hstat-n">0</div><div class="hstat-l">:features changes for a new variant</div></div>
+      <div class="hstat"><div class="hstat-n">~10</div><div class="hstat-l">files per new region variant</div></div>
+      <div class="hstat"><div class="hstat-n">~3</div><div class="hstat-l">files per new tenant profile</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section id="problem" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">The Problem</div>
+    <h2 class="sec-title fu">Conditional Logic Sprawl</h2>
+    <p class="sec-sub fu">The existing <code class="ic">Bizplay4.0_IPPP</code> codebase has ~124 call sites that branch on corporate-customer identity. Every new tenant means touching every flow. Regression risk scales as <strong>O(tenants × features)</strong>.</p>
+    <div class="fu">
+      <div class="cwin">
+        <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">Scattered across every flow in Bizplay4.0_IPPP</span></div>
+        <div class="cwin-body"><pre><span class="kw">if</span>      (<span class="ty">DetailConfig</span>.<span class="fn">isNIA</span>())           { … }  <span class="cm">← scattered across every flow</span>
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isPOSCO_ICT</span>())   { … }  <span class="cm">← scattered across every flow</span>
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isLotte</span>())        { … }  <span class="cm">← scattered across every flow</span>
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isWIPS</span>())         { … }  <span class="cm">← scattered across every flow</span>
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isShinsegae</span>())    { … }
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isITCen</span>())        { … }
+<span class="kw">else if</span> (<span class="ty">DetailConfig</span>.<span class="fn">isHANA</span>())         { … }
+<span class="kw">else</span>    { <span class="cm">/* IBS, SPC, Chilsung, … */</span> }</pre></div>
+      </div>
+    </div>
+    <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin:1.8rem 0 .8rem" class="fu">Three Approaches We Rejected</h3>
+    <div class="fu">
+      <table>
+        <thead><tr><th>Approach</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td><code>if (DetailConfig.isXxx())</code> chains — today's shape</td><td><span class="bad">One PR touches every flow</span></td></tr>
+          <tr><td>One APK per corporate customer</td><td><span class="bad">Cherry-picks across N branches; CI / store-listing matrix</span></td></tr>
+          <tr><td>Runtime DI hot-swap</td><td><span class="bad">Engineering effort on a flow users never take</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section id="solution">
+  <div class="wrap">
+    <div class="lbl fu">The Solution</div>
+    <h2 class="sec-title fu">A Layered DAG</h2>
+    <p class="sec-sub fu">8 module shapes with a strict dependency graph. Depend upward, never sideways. Forbidden imports enforced at compile time.</p>
+    <div class="dag-wrap fu">
+      <div class="dag-row"><div class="dag-node n-infra">:aos-core</div></div>
+      <div class="dag-label">Infrastructure · HTTP, SQLCipher, TransKey, mVaccine, Secucen, BizWebView, storage, logs</div>
+      <div class="dag-row-arr"><div class="dag-arr">↑</div></div>
+      <div class="dag-row">
+        <div class="dag-node n-contract">:core</div>
+        <div style="color:var(--dim);padding:0 .4rem">+</div>
+        <div class="dag-node n-ds">:design-system</div>
+      </div>
+      <div class="dag-label">Contracts (interfaces, models, MVI) · UI primitives (BizTheme, BizButton, BizWebView…)</div>
+      <div class="dag-row-arr"><div class="dag-arr">↑</div></div>
+      <div class="dag-row" style="gap:.6rem">
+        <div class="dag-node n-impl" style="min-width:90px">:data</div>
+        <div class="dag-node n-impl" style="min-width:110px">:variants-kr</div>
+        <div class="dag-node n-impl" style="min-width:110px">:variants-kh</div>
+        <div class="dag-node n-impl" style="min-width:110px">:variants-vn</div>
+        <div class="dag-node n-impl" style="min-width:95px">:features</div>
+        <div class="dag-node n-impl" style="min-width:140px">:features-scanner</div>
+        <div class="dag-node n-impl" style="min-width:130px">:features-hipass</div>
+      </div>
+      <div class="dag-label">Implementations &amp; UI · siblings never cross-depend</div>
+      <div class="dag-row-arr"><div class="dag-arr">↑</div></div>
+      <div class="dag-row"><div class="dag-node n-app">:app</div></div>
+      <div class="dag-label">Orchestrator · BootCoordinator, LoggedInComponent, navigation, DI registry</div>
+    </div>
+    <div class="callout callout-warn fu">
+      <div class="ic">🚫</div>
+      <div class="cb"><b>Forbidden imports — compile-time rules</b>
+        <code class="ic">:features</code> → <code class="ic">:data</code> or <code class="ic">:variants-*</code> &nbsp;·&nbsp;
+        <code class="ic">:variants-A</code> → <code class="ic">:variants-B</code> &nbsp;·&nbsp;
+        <code class="ic">:data</code> → <code class="ic">:variants-*</code> or <code class="ic">:design-system</code> &nbsp;·&nbsp;
+        <code class="ic">:core</code> → anything downstream &nbsp;·&nbsp;
+        <code class="ic">:aos-core</code> → any product term (Receipt, Expense, Approval, variant ID…)
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROMISES -->
+<section id="promises" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">Four Promises</div>
+    <h2 class="sec-title fu">What the Framework Guarantees</h2>
+    <p class="sec-sub fu">Every architectural decision is in service of one of these four invariants. Any PR that contradicts them is a regression.</p>
+    <div class="cards2 fu">
+      <div class="pcard">
+        <div class="pcard-icon" style="background:rgba(0,200,200,.15)">🌐</div>
+        <div>
+          <div class="pcard-title">Server-Side Demux</div>
+          <div class="pcard-body">One IPPP backend handles per-user, per-<code class="ic">USE_INTT_ID</code>, per-<code class="ic">COMPANY_CD</code> routing. No <code class="ic">KrKakaoPayApi</code> on the client. The <code class="ic">Ippp*Api</code> family is split by feature area, not by variant.</div>
+        </div>
+      </div>
+      <div class="pcard">
+        <div class="pcard-icon" style="background:rgba(255,185,64,.12)">🔑</div>
+        <div>
+          <div class="pcard-title">Login-Once Binding</div>
+          <div class="pcard-body"><code class="ic">LoggedInComponent</code> built at login with variant + tenant context, dropped at logout. No runtime swap. Variant or tenant change = logout → login.</div>
+        </div>
+      </div>
+      <div class="pcard">
+        <div class="pcard-icon" style="background:rgba(168,85,247,.12)">🚀</div>
+        <div>
+          <div class="pcard-title">MgGate Bootstrap</div>
+          <div class="pcard-body">Only the MgGate URL is hardcoded (<code class="ic">Conf.SITE_MG_URL + "/MgGate"</code>). All backend URLs, maintenance state, and version floors come from MgGate at cold start via <code class="ic">RuntimeConfig</code>.</div>
+        </div>
+      </div>
+      <div class="pcard">
+        <div class="pcard-icon" style="background:rgba(16,185,129,.12)">➕</div>
+        <div>
+          <div class="pcard-title">Additive Onboarding</div>
+          <div class="pcard-body">New variant = new module + 2 lines. New tenant = 1–3 files inside its variant. Zero change to <code class="ic">:features</code> or <code class="ic">:data</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AXES -->
+<section id="axes">
+  <div class="wrap">
+    <div class="lbl fu">Two Axes, Three Layers</div>
+    <h2 class="sec-title fu">Variant ⊃ Tenant ⊃ Account</h2>
+    <p class="sec-sub fu">Three orthogonal bindings. Variant and tenant bind at login and never swap at runtime. Account is a session-level header flip — cheap, instantaneous.</p>
+    <div class="axis-box fu">
+      <div class="axis-row">
+        <div class="axis-badge ab-v">Variant</div>
+        <div>
+          <div class="axis-label">Region / regulator boundary</div>
+          <div class="axis-detail"><code class="ic">:variants-kr</code> &nbsp;/&nbsp; <code class="ic">:variants-kh</code> &nbsp;/&nbsp; <code class="ic">:variants-vn</code> — drives: amount limits, fee calculators, formatters, capability flags, support contacts, calendars, receipt rendering.</div>
+          <div class="axis-arrow">↓ login-time bind, no runtime swap</div>
+        </div>
+      </div>
+      <div class="axis-row">
+        <div class="axis-badge ab-t">Tenant</div>
+        <div>
+          <div class="axis-label">Corporate customer boundary</div>
+          <div class="axis-detail">POSCO ICT · Lotte · NIA · Shinsegae · ITCen · WIPS · HANA · IBS · SPC · default — drives: <code class="ic">TenantFlags</code> (named booleans) and <code class="ic">TenantParams</code> (typed fields). Structural differences use a <code class="ic">:core/policy/</code> interface per-tenant impl.</div>
+          <div class="axis-arrow">↓ login-time bind, no runtime swap</div>
+        </div>
+      </div>
+      <div class="axis-row">
+        <div class="axis-badge ab-a">Account</div>
+        <div>
+          <div class="axis-label">Institution membership — the real runtime axis</div>
+          <div class="axis-detail"><code class="ic">USE_INTT_ID</code> / <code class="ic">COMPANY_CD</code> — today's <code class="ic">SelectUserInttIdActivity</code> flow. Stamped on every request by <code class="ic">AccountIdInterceptor</code> from <code class="ic">Session.activeAccountId: StateFlow&lt;AccountId&gt;</code>. Just a header swap — no DI rebuild, no logout required.</div>
+        </div>
+      </div>
+    </div>
+    <div class="callout callout-info fu">
+      <div class="ic">ℹ</div>
+      <div class="cb"><b>Key distinction</b> — Switching corporate accounts (the daily picker) is an account flip: cheap, same <code class="ic">LoggedInComponent</code>. Switching variant or tenant requires logout → login to rebuild the DI graph.</div>
+    </div>
+  </div>
+</section>
+
+<!-- VARIANT SNAPSHOT -->
+<section id="variants" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">Variant Snapshot</div>
+    <h2 class="sec-title fu">Same Interface, Different Content</h2>
+    <p class="sec-sub fu">Every variant binds the same set of <code class="ic">:core</code> policy interfaces. <code class="ic">:features</code> sees only the interface — never the implementing class.</p>
+    <div class="vcompare fu">
+      <div class="vcompare-header">
+        <div class="vch">Policy</div>
+        <div class="vch">🇰🇷 KR (Korea)</div>
+        <div class="vch">🇰🇭 KH (Cambodia)</div>
+      </div>
+      <div class="vcompare-row"><div class="vc-section">ExpenseAmountPolicy</div></div>
+      <div class="vcompare-row"><div class="vc-k">perReceiptLimit</div><div class="vc-v">1M KRW (≈ $750)</div><div class="vc-v">4M KHR (≈ $1,000)</div></div>
+      <div class="vcompare-row"><div class="vc-k">dailyLimit</div><div class="vc-v">5M KRW</div><div class="vc-v">20M KHR</div></div>
+      <div class="vcompare-row"><div class="vc-section">FeeCalculator (per-category reimbursement caps)</div></div>
+      <div class="vcompare-row"><div class="vc-k">Meal</div><div class="vc-v">₩50,000</div><div class="vc-v">Flat full reimbursement</div></div>
+      <div class="vcompare-row"><div class="vc-k">Fuel</div><div class="vc-v">₩200,000</div><div class="vc-v">Flat full reimbursement</div></div>
+      <div class="vcompare-row"><div class="vc-k">Entertainment</div><div class="vc-v">₩100,000</div><div class="vc-v">Flat full reimbursement</div></div>
+      <div class="vcompare-row"><div class="vc-section">VariantCapabilities</div></div>
+      <div class="vcompare-row"><div class="vc-k">KakaoPayLink</div><div class="vc-v vc-yes">✓</div><div class="vc-v vc-no">✗</div></div>
+      <div class="vcompare-row"><div class="vc-k">HipassTracking</div><div class="vc-v vc-yes">✓ (Korea-only highway toll)</div><div class="vc-v vc-no">✗</div></div>
+      <div class="vcompare-row"><div class="vc-k">MyDataIntegration</div><div class="vc-v vc-yes">✓</div><div class="vc-v vc-no">✗</div></div>
+      <div class="vcompare-row"><div class="vc-k">BilingualReceipt</div><div class="vc-v vc-no">✗ (Korean only)</div><div class="vc-v vc-yes">✓ (English + Khmer)</div></div>
+      <div class="vcompare-row"><div class="vc-section">AmountFormatter · SupportContacts</div></div>
+      <div class="vcompare-row"><div class="vc-k">Amount format</div><div class="vc-v">₩1,234,567</div><div class="vc-v">1,234,567៛</div></div>
+      <div class="vcompare-row"><div class="vc-k">Support phone</div><div class="vc-v">+82 2 1588 9999</div><div class="vc-v">+855 23 999 999</div></div>
+      <div class="vcompare-row"><div class="vc-k">Support hours</div><div class="vc-v">Mon–Fri 9a–6p KST</div><div class="vc-v">Mon–Fri 8a–8p ICT</div></div>
+    </div>
+    <div class="callout callout-good fu">
+      <div class="ic">✓</div>
+      <div class="cb"><b>~10 small files per variant · Same :core interfaces · Different content</b> — Each variant module contains only policy implementations + a Hilt module. No UI, no networking, no DTOs.</div>
+    </div>
+  </div>
+</section>
+
+<!-- TENANT SNAPSHOT -->
+<section id="tenants">
+  <div class="wrap">
+    <div class="lbl fu">Tenant Snapshot</div>
+    <h2 class="sec-title fu">Same Variant, Different Content</h2>
+    <p class="sec-sub fu">Inside <code class="ic">:variants-kr</code> — per-corporate-customer differences expressed as named flags and typed params, not as <code class="ic">if (DetailConfig.isPOSCO())</code> chains.</p>
+    <div class="fu">
+      <table>
+        <thead><tr><th>TenantFlag</th><th>POSCO ICT</th><th>NIA</th><th>Shinsegae</th><th>default</th></tr></thead>
+        <tbody>
+          <tr><td><code>hidesEmployeeId</code></td><td>false</td><td><strong>true</strong></td><td>false</td><td>false</td></tr>
+          <tr><td><code>clearsEmployeeId</code></td><td>false</td><td>false</td><td>false</td><td>false</td></tr>
+          <tr><td><code>requiresIdNumber</code></td><td>false</td><td><strong>true</strong></td><td>false</td><td>false</td></tr>
+          <tr><td><code>usesTripFlow</code></td><td><strong>true</strong></td><td>false</td><td>false</td><td>false</td></tr>
+          <tr><td><code>allowsPwdReset</code></td><td>false</td><td>false</td><td>false</td><td>false</td></tr>
+          <tr><td><code>ApprovalLineRenderer</code></td><td>default</td><td>default</td><td><strong style="color:var(--teal-l)">structural</strong><br><small style="font-size:.78em;color:var(--dim)">(own layout via :core/policy/ impl)</small></td><td>default</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cards2 fu" style="margin-top:1.4rem">
+      <div class="card">
+        <div class="ct">Tenant = ~3 files</div>
+        <div class="cd">One <code class="ic">TenantProfile.kt</code> (10–30 lines), optional structural policy impl, and one <code class="ic">TenantCatalogue</code> entry. Onboarding a new corporate customer is strictly additive — zero changes to existing code.</div>
+      </div>
+      <div class="card card-gold">
+        <div class="ct">Switching accounts vs tenants</div>
+        <div class="cd"><strong>Switching <code class="ic">USE_INTT_ID</code></strong> = <code class="ic">Session.activeAccountId</code> flip, instantaneous header swap.<br><br><strong>Switching tenant</strong> (different corporate contract) = logout → login, rebuilds <code class="ic">LoggedInComponent</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ONBOARDING COST -->
+<section id="onboarding" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">Onboarding Cost</div>
+    <h2 class="sec-title fu">Additive by Design</h2>
+    <p class="sec-sub fu">Zero change to <code class="ic">:features</code>, <code class="ic">:data</code>, <code class="ic">:design-system</code>, or sibling variants when adding new ones. Compile-time enforced.</p>
+    <div class="cost-two fu">
+      <div>
+        <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin-bottom:.9rem">Adding <code class="ic">:variants-vn</code> (a new region)</h3>
+        <table>
+          <thead><tr><th>Touch</th><th>Lines</th></tr></thead>
+          <tbody>
+            <tr><td>New <code>:variants-vn</code> module</td><td style="color:var(--text)">150–250</td></tr>
+            <tr><td><code>settings.gradle.kts</code></td><td style="color:var(--text)">+1</td></tr>
+            <tr><td><code>VariantCatalogue.kt</code></td><td style="color:var(--text)">+1</td></tr>
+            <tr><td><strong>:features</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>:data</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>:design-system</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>Other variants</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>:core</strong></td><td><span class="zero">0 <small style="color:var(--dim);font-size:.8em">(unless new policy interface)</small></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin-bottom:.9rem">Adding a new tenant inside <code class="ic">:variants-kr</code></h3>
+        <table>
+          <thead><tr><th>Touch</th><th>Lines</th></tr></thead>
+          <tbody>
+            <tr><td>New <code>tenants/{id}/TenantProfile.kt</code></td><td style="color:var(--text)">10–30</td></tr>
+            <tr><td><code>TenantCatalogue.kt</code></td><td style="color:var(--text)">+1</td></tr>
+            <tr><td><strong>:features</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>:data</strong></td><td><span class="zero">0</span></td></tr>
+            <tr><td><strong>:core</strong></td><td><span class="zero">0 <small style="color:var(--dim);font-size:.8em">(unless new TenantFlags field)</small></span></td></tr>
+          </tbody>
+        </table>
+        <div class="callout callout-good" style="margin-top:.9rem">
+          <div class="ic">✓</div>
+          <div class="cb">Compile-time enforced. Hilt's annotation processor errors before the app boots if an invariant is violated.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WORKED FLOW -->
+<section id="flow">
+  <div class="wrap">
+    <div class="lbl fu">Worked Flow</div>
+    <h2 class="sec-title fu">KR / POSCO ICT User Submits a Receipt</h2>
+    <p class="sec-sub fu">The UI doesn't know it's KR. The UI doesn't know it's POSCO. The repo doesn't know either. The server figures it out from auth + institution headers.</p>
+    <div class="flow fu">
+      <div class="flow-step">
+        <div class="flow-left"><div class="flow-dot" style="background:linear-gradient(135deg,var(--teal),var(--teal-d))">1</div><div class="flow-line"></div></div>
+        <div class="flow-content">
+          <div class="flow-title">Submit tap — UiEvent dispatched</div>
+          <div class="flow-detail">ReceiptDetailScreen → ReceiptDetailViewModel.onEvent(Submit)</div>
+          <span class="ftag ftag-t">:features/receipt — Logic-Blind</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-left"><div class="flow-dot" style="background:linear-gradient(135deg,var(--gold),#c87d10)">2</div><div class="flow-line"></div></div>
+        <div class="flow-content">
+          <div class="flow-title">ReceiptDetailViewModel — no use case in between</div>
+          <div class="flow-detail">amountPolicy.validate(amount)           ← KrExpenseAmountPolicy  from :variants-kr
+feeCalculator.reimbursableAmount(…)    ← KrFeeCalculator        from :variants-kr
+<span class="cm">// tenant.flags.usesTripFlow read at init → state.showTripFields</span>
+repo.create(draft)</div>
+          <span class="ftag ftag-t">VM sees only :core interfaces</span>
+          <span class="ftag ftag-g">No variant/tenant ID ever read</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-left"><div class="flow-dot" style="background:linear-gradient(135deg,var(--blue),#1d4ed8)">3</div><div class="flow-line"></div></div>
+        <div class="flow-content">
+          <div class="flow-title">ReceiptRepository — :core interface</div>
+          <div class="flow-detail">Hilt resolves to IpppReceiptRepo ← :data
+(active LoggedInComponent binding, set at login time)</div>
+          <span class="ftag ftag-p">Hilt resolves interface → impl at login</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-left"><div class="flow-dot" style="background:linear-gradient(135deg,var(--purple),var(--purple-d))">4</div><div class="flow-line"></div></div>
+        <div class="flow-content">
+          <div class="flow-title">IpppReceiptRepo — POST /v1/receipt</div>
+          <div class="flow-detail">Authorization: Bearer …
+X-Use-Intt-Id: INTT-12345    <span class="cm">← POSCO ICT — Seoul HQ membership</span>
+X-Company-Cd:  POSCO-ICT     <span class="cm">← stamped by AccountIdInterceptor</span></div>
+          <span class="ftag ftag-t">:data — one impl for all variants and tenants</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-left"><div class="flow-dot" style="background:linear-gradient(135deg,var(--green),#047857)">5</div></div>
+        <div class="flow-content">
+          <div class="flow-title">IPPP backend — server-side routing</div>
+          <div class="flow-detail">Demux using auth + institution headers. No per-variant API surface on the client.</div>
+          <span class="ftag ftag-gr">Framework promise #1 — Server-side demux</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NO DOMAIN -->
+<section id="nodomain" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">Design Decision</div>
+    <h2 class="sec-title fu">No <code style="font-family:inherit">:domain</code> Module · No Use Cases</h2>
+    <p class="sec-sub fu"><code class="ic">:core</code> already plays the domain-contracts role. Variability lives in <code class="ic">:variants-*/policy/</code> and <code class="ic">TenantFlags</code>. The orchestration that use cases would perform happens in the ViewModel — typically 5–15 lines.</p>
+    <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin:0 0 .9rem" class="fu">Side-by-Side: Same Flow, Two Designs</h3>
+    <div class="codepair fu">
+      <div class="cwin">
+        <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">❌ With a use case layer</span></div>
+        <div class="cwin-body"><pre><span class="kw">class</span> <span class="ty">SubmitReceiptUseCase</span> <span class="an">@Inject</span> <span class="kw">constructor</span>(
+    <span class="kw">private val</span> policy: <span class="ty">ExpenseAmountPolicy</span>,
+    <span class="kw">private val</span> repo:   <span class="ty">ReceiptRepository</span>,
+) {
+    <span class="kw">suspend operator fun</span> <span class="fn">invoke</span>(
+        draft: <span class="ty">ReceiptDraft</span>
+    ): <span class="ty">Result</span>&lt;<span class="ty">Receipt</span>&gt; =
+        <span class="kw">when</span> (<span class="kw">val</span> v = policy.<span class="fn">validate</span>(draft.amount)) {
+            <span class="kw">is</span> <span class="ty">ValidationResult</span>.<span class="ty">Invalid</span> ->
+                <span class="ty">Result</span>.<span class="fn">failure</span>(<span class="ty">ValidationException</span>(v.reason))
+            <span class="ty">ValidationResult</span>.<span class="ty">Valid</span> ->
+                repo.<span class="fn">create</span>(draft)
+        }
+}
+
+<span class="kw">class</span> <span class="ty">ReceiptDetailViewModel</span> <span class="an">@Inject</span> <span class="kw">constructor</span>(
+    <span class="kw">private val</span> submit: <span class="ty">SubmitReceiptUseCase</span>,
+    <span class="cm">// hides policy + repo behind a wrapper</span>
+) : <span class="ty">MviViewModel</span>&lt;…&gt;() { … }</pre></div>
+      </div>
+      <div class="cwin">
+        <div class="cwin-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cwin-lbl">✅ Bizplay framework — VM composes directly</span></div>
+        <div class="cwin-body"><pre><span class="kw">class</span> <span class="ty">ReceiptDetailViewModel</span> <span class="an">@Inject</span> <span class="kw">constructor</span>(
+    <span class="kw">private val</span> policy: <span class="ty">ExpenseAmountPolicy</span>,
+    <span class="kw">private val</span> repo:   <span class="ty">ReceiptRepository</span>,
+) : <span class="ty">MviViewModel</span>&lt;…&gt;() {
+
+    <span class="kw">private fun</span> <span class="fn">onSubmit</span>() = viewModelScope.<span class="fn">launch</span> {
+        <span class="kw">when</span> (<span class="kw">val</span> v = policy.<span class="fn">validate</span>(state.value.amount)) {
+            <span class="kw">is</span> <span class="ty">ValidationResult</span>.<span class="ty">Invalid</span> ->
+                <span class="fn">setState</span> { <span class="fn">copy</span>(error = v.reason) }
+            <span class="ty">ValidationResult</span>.<span class="ty">Valid</span> ->
+                repo.<span class="fn">create</span>(state.value.draft).<span class="fn">fold</span>(…)
+        }
+    }
+}</pre></div>
+      </div>
+    </div>
+    <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin:1.8rem 0 .9rem" class="fu">What a Use Case Layer Promises — and Where We Already Get It</h3>
+    <div class="fu">
+      <table>
+        <thead><tr><th>Promised benefit</th><th>Bizplay framework provides it via</th></tr></thead>
+        <tbody>
+          <tr><td>Reusable business rules across screens</td><td><strong>Policies</strong> — injectable wherever needed</td></tr>
+          <tr><td>Variant-specific behavior</td><td><strong>:variants-{id}</strong> — one policy impl set per variant</td></tr>
+          <tr><td>Tenant-specific behavior</td><td><strong>TenantFlags / TenantParams</strong> on TenantContext</td></tr>
+          <tr><td>Pure JVM-testable logic, no fixtures</td><td><strong>Policies</strong> — no Android, no Hilt required</td></tr>
+          <tr><td>ViewModel kept thin</td><td>Rules live in policies; VM only orchestrates (5–15 lines)</td></tr>
+          <tr><td>UI insulated from impls</td><td><strong>:core interfaces</strong> — :features never names a :data or :variants-* class</td></tr>
+          <tr><td>I/O decoupled from rules</td><td><strong>Repository</strong> (I/O) vs <strong>Policy</strong> (rules) — already the split</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 style="font-size:1rem;font-weight:800;color:var(--gold-l);margin:1.8rem 0 .9rem" class="fu">Rule of Thumb — Where New Behavior Lands</h3>
+    <div class="fu">
+      <table>
+        <thead><tr><th>Variability lives in…</th><th>Goes in…</th></tr></thead>
+        <tbody>
+          <tr><td>Region-level rule (limit, fee, format, regex)</td><td><code>:core/policy/</code> interface → variant impl</td></tr>
+          <tr><td>Region-level capability toggle</td><td><code>VariantCapabilities</code> → variant returns bool</td></tr>
+          <tr><td>Per-corporate-customer field visibility / format</td><td><code>TenantFlags / TenantParams</code> → TenantProfile sets values</td></tr>
+          <tr><td>Per-corporate-customer structural difference</td><td><code>:core/policy/</code> → tenant impl in <code>:variants-{region}/tenants/{id}/</code></td></tr>
+          <tr><td>I/O</td><td><code>:core/repository/</code> interface → <code>:data</code> impl</td></tr>
+          <tr><td>Multi-step orchestration</td><td><strong>ViewModel</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- TRADEOFFS -->
+<section id="tradeoffs">
+  <div class="wrap">
+    <div class="lbl fu">Tradeoffs</div>
+    <h2 class="sec-title fu">Costs We Accept</h2>
+    <p class="sec-sub fu">Every architectural choice has costs. These are the ones this framework consciously accepts in exchange for the invariants it provides.</p>
+    <div class="cards2 fu">
+      <div class="card">
+        <div class="ct">Slightly larger APK</div>
+        <div class="cd">Every variant's Hilt module compiles into the binary. Only the entries matching the logged-in user's <code class="ic">variantId</code> are exercised; the others sit inert in the maps.<br><br><em style="font-size:.84rem;color:var(--dim)">Why OK:</em> Variants are ~10 files each, tenants ~3. The compile-in cost is negligible.</div>
+      </div>
+      <div class="card">
+        <div class="ct">Convention-based feature boundaries</div>
+        <div class="cd">Feature boundaries in <code class="ic">:features</code> are packages, not Gradle modules.<br><br><em style="font-size:.84rem;color:var(--dim)">Why OK:</em> Lint enforces it; build-perf wins justify the trade. Heavy-SDK and variant-locked features still get their own sibling modules.</div>
+      </div>
+      <div class="card">
+        <div class="ct">Variant or tenant change = logout-login</div>
+        <div class="cd">Changing variant/tenant mid-session requires logout → re-login.<br><br><em style="font-size:.84rem;color:var(--dim)">Why OK:</em> Runtime swap is costly machinery for a non-real flow. The institution switch (the real daily flow) is a cheap header swap.</div>
+      </div>
+      <div class="card">
+        <div class="ct">Java → Kotlin migration over time</div>
+        <div class="cd">The existing Bizplay Java codebase stays compilable; new code is Kotlin + Compose + Hilt + MVI.<br><br><em style="font-size:.84rem;color:var(--dim)">Why OK:</em> Incremental migration is lower risk than a big-bang rewrite.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="alt">
+  <div class="wrap">
+    <div class="lbl fu">FAQ</div>
+    <h2 class="sec-title fu">Frequently Asked Questions</h2>
+    <p class="sec-sub fu">Common questions from engineering leads reviewing the architecture.</p>
+    <div class="fu">
+      <div class="faq-item">
+        <div class="faq-q">Can a user log in to different corporate accounts on the same device?<div class="faq-ico">+</div></div>
+        <div class="faq-a"><strong>Yes.</strong> Logout drops the session graph (component, prefs, SQLCipher session scope, cache) and pops navigation to root. The next login rebuilds with whatever <code class="ic">variantId</code> + <code class="ic">tenantId</code> the server returns. No special code path.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What about per-tenant branding (POSCO red vs Lotte navy vs NIA orange)?<div class="faq-ico">+</div></div>
+        <div class="faq-a">Future-roadmap. Branding is intentionally <strong>not</strong> in <code class="ic">RuntimeConfig</code>; per-tenant theming would be a separate <code class="ic">TenantBrandPolicy</code> mechanism that <code class="ic">:app</code> weaves into <code class="ic">BizTheme</code> composition locals.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What if a customer wants their own backend?<div class="faq-ico">+</div></div>
+        <div class="faq-a">Doesn't happen — IPPP is one backend with server-side demux per <code class="ic">USE_INTT_ID</code> + <code class="ic">COMPANY_CD</code>. If a customer genuinely needs a different protocol, they're a new variant, not a new tenant.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What if a variant grows to need its own UI / API / screens?<div class="faq-ico">+</div></div>
+        <div class="faq-a">Goes in a sibling module: <code class="ic">:features-{feature-name}</code> (e.g. <code class="ic">:features-hipass</code> for Korea-only highway tolls), gated by a <code class="ic">VariantCapabilities</code> flag. The variant module stays pure policies + DI.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Where do use cases / interactors live?<div class="faq-ico">+</div></div>
+        <div class="faq-a"><strong>There are none.</strong> ViewModel composes a <code class="ic">:core</code> policy + a <code class="ic">:core</code> repository directly. The variability use cases would carry lives in <code class="ic">:variants-*/policy/</code>. The orchestration is 5–15 lines in the ViewModel.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Why no separate :domain module?<div class="faq-ico">+</div></div>
+        <div class="faq-a"><code class="ic">:core</code> already owns contracts + models. Variability lives in <code class="ic">:variants-*/policy/</code> and <code class="ic">TenantFlags</code>. Splitting across two modules buys no new isolation — it just adds another recompile trigger.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What happens to the existing DetailConfig.isXxx() chain?<div class="faq-ico">+</div></div>
+        <div class="faq-a"><strong>Deleted.</strong> Each predicate maps to a named <code class="ic">TenantFlags</code> field (e.g. <code class="ic">isNIA()</code> → <code class="ic">tenant.flags.hidesEmployeeId + requiresIdNumberCapture</code>), or — for structural differences — a per-tenant impl of a <code class="ic">:core/policy/</code> interface.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What happens to BizWebview and BrowserBridge?<div class="faq-ico">+</div></div>
+        <div class="faq-a">The Java <code class="ic">BizWebview</code> becomes the Compose <code class="ic">BizWebView</code> in <code class="ic">:aos-core/webview/</code>. The <code class="ic">BrowserBridge</code> family collapses to a single-method <code class="ic">WebActionBridge</code> with a versioned payload. URLs come from <code class="ic">RuntimeConfig.webRoutes</code>, not hardcoded <code class="ic">loadUrl</code> strings.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATUS -->
+<section id="status">
+  <div class="wrap">
+    <div class="lbl fu">Status &amp; Sequence</div>
+    <h2 class="sec-title fu">Build Sequence</h2>
+    <p class="sec-sub fu">Architecture spec: <strong style="color:var(--green-l)">complete</strong> (20 docs in <code class="ic">docs/</code>). Implementation: <strong style="color:var(--gold-l)">not started</strong> in the new shape. The existing <code class="ic">Bizplay4.0_IPPP</code> project is the starting source material.</p>
+    <div class="seq fu">
+      <div class="seq-item"><div class="seq-num">1</div><div><div class="seq-title">:aos-core</div><div class="seq-detail">Formalise from today's SMART_LIB_STUDIO_CAMBODIA submodule; add typed wrappers for SQLCipher, TransKey, mVaccine, Secucen, and the BizWebView Composable.</div></div></div>
+      <div class="seq-item"><div class="seq-num">2</div><div><div class="seq-title">:core</div><div class="seq-detail">Interfaces, models, RuntimeConfig, Session, VariantContext, TenantContext, TenantFlags, TenantParams.</div></div></div>
+      <div class="seq-item"><div class="seq-num">3</div><div><div class="seq-title">:design-system</div><div class="seq-detail">BizTheme + first components: BizButton, BizTextField, BizPasswordField wrapping TransKey, BizWebViewFrame.</div></div></div>
+      <div class="seq-item"><div class="seq-num">4</div><div><div class="seq-title">:data</div><div class="seq-detail">Ippp*Api family + first repo: auth (IpppAuthApi, IpppAuthRepo, DataModule).</div></div></div>
+      <div class="seq-item"><div class="seq-num">5</div><div><div class="seq-title">:variants-kr</div><div class="seq-detail">Region policies + at least one tenant profile: posco_ict. Validates the full variant onboarding shape.</div></div></div>
+      <div class="seq-item"><div class="seq-num">6</div><div><div class="seq-title">:app</div><div class="seq-detail">BootCoordinator + LoggedInComponent + VariantResolverModule + TenantResolverModule.</div></div></div>
+      <div class="seq-item"><div class="seq-num">7</div><div><div class="seq-title">End-to-end flow</div><div class="seq-detail">Login → institution picker → receipt list → first receipt create. Proves the wiring works.</div></div></div>
+      <div class="seq-item"><div class="seq-num">8</div><div><div class="seq-title">Add more tenants</div><div class="seq-detail">NIA, Lotte, Shinsegae, … — strictly additive, ~3 files each. Validates the tenant onboarding promise.</div></div></div>
+      <div class="seq-item"><div class="seq-num">9</div><div><div class="seq-title">:variants-kh</div><div class="seq-detail">Canonical demo that the architecture's promise holds across regions, not just inside Korea.</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- REFERENCE -->
+<section class="alt" style="border-bottom:none">
+  <div class="wrap">
+    <div class="lbl fu">Reference</div>
+    <h2 class="sec-title fu">Deeper Docs</h2>
+    <p class="sec-sub fu">Reading order: start with <code class="ic">00-overview.md</code>, then <code class="ic">01-module-topology.md</code>.</p>
+    <div class="ref-grid fu">
+      <div class="ref-card"><div class="ref-q">Why this shape?</div><div class="ref-doc">docs/00-overview.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Dependency rules?</div><div class="ref-doc">docs/01-module-topology.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Boot mechanism?</div><div class="ref-doc">docs/10-boot-phases.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Onboarding a region?</div><div class="ref-doc">docs/13-onboarding-a-variant.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Onboarding a tenant?</div><div class="ref-doc">docs/19-tenants-and-variants.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">WebView discipline?</div><div class="ref-doc">docs/18-webview-integration.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Full project tree?</div><div class="ref-doc">docs/17-project-structure.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Variant code in full?</div><div class="ref-doc">docs/07-variants.md § 5.9 <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Tenant mapping (DetailConfig.isXxx)?</div><div class="ref-doc">docs/19-tenants-and-variants.md § 9 <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Hilt multibindings + variant dispatch?</div><div class="ref-doc">docs/07-variants.md § 6 <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">MVI pattern?</div><div class="ref-doc">docs/09-mvi-pattern.md <span class="ref-arr">→</span></div></div>
+      <div class="ref-card"><div class="ref-q">Tech stack reference?</div><div class="ref-doc">docs/15-tech-stack.md <span class="ref-arr">→</span></div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="fb">BIZPLAY IPPP</div>
+  <div class="fs">Architecture spec complete &nbsp;·&nbsp; 20 docs in docs/ &nbsp;·&nbsp; Implementation not started in new shape<br>Kotlin &nbsp;·&nbsp; Jetpack Compose &nbsp;·&nbsp; Hilt &nbsp;·&nbsp; MVI &nbsp;·&nbsp; Retrofit &nbsp;·&nbsp; SQLCipher &nbsp;·&nbsp; TransKey &nbsp;·&nbsp; mVaccine</div>
+</footer>
+
+<script>
+const obs = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('vis') }),
+  { threshold: 0.07 }
+);
+document.querySelectorAll('.fu').forEach(el => obs.observe(el));
+
+document.querySelectorAll('.faq-q').forEach(q => {
+  q.addEventListener('click', () => {
+    const item = q.closest('.faq-item');
+    const wasOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+    if (!wasOpen) item.classList.add('open');
+  });
+});
+
+const navLinks = document.querySelectorAll('.nl a');
+const spy = new IntersectionObserver(
+  entries => entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => a.classList.remove('active'));
+      const a = document.querySelector(`.nl a[href="#${e.target.id}"]`);
+      if (a) a.classList.add('active');
+    }
+  }),
+  { rootMargin: '-38% 0px -57% 0px' }
+);
+document.querySelectorAll('section[id]').forEach(s => spy.observe(s));
+</script>
+</body>
+</html>

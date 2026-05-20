@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hilt Dependency Injection — Components, Scoping & @Binds</title>
+<style>
+:root {
+  --navy:#0A1530; --navy-l:#142348; --bg:#050A18;
+  --teal:#00C8C8; --teal-l:#33DDDD; --teal-d:#008B8B;
+  --gold:#FFB940; --gold-l:#FFCF73;
+  --purple:#A855F7; --purple-l:#C084FC;
+  --red:#EF4444; --red-l:#F87171;
+  --green:#10B981; --green-l:#34D399;
+  --blue:#3B82F6; --blue-l:#60A5FA;
+  --white:#FFFFFF; --grey:#94A3B8;
+  --card:#0F1E40; --card2:#16264A; --card3:#1C2F5A;
+  --border:rgba(0,200,200,.28);
+  --border-strong:rgba(0,200,200,.5);
+  --text:#F1F5FB;
+  --text-mid:#C7D5EA;
+  --dim:#9CB0CF;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;background:rgba(5,10,24,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:.75rem 2.5rem;height:58px}
+.nb{font-size:1.05rem;font-weight:900;letter-spacing:.07em;background:linear-gradient(120deg,var(--teal),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nl{display:flex;gap:.15rem;flex-wrap:wrap}
+.nl a{color:var(--text-mid);text-decoration:none;padding:.4rem .75rem;border-radius:7px;font-size:.78rem;font-weight:700;letter-spacing:.03em;transition:color .2s,background .2s}
+.nl a:hover{color:var(--teal);background:rgba(0,200,200,.14)}
+
+/* COMMON */
+.wrap{max-width:1260px;margin:0 auto;padding:0 2rem}
+.lbl{font-size:.72rem;font-weight:900;letter-spacing:.18em;color:var(--teal);text-transform:uppercase;margin-bottom:.55rem}
+.h1{font-size:clamp(1.9rem,3.8vw,2.8rem);font-weight:900;line-height:1.1;color:var(--white);margin-bottom:.9rem;letter-spacing:-.02em}
+.h2{font-size:1.35rem;font-weight:800;color:var(--gold-l);margin:2rem 0 .9rem}
+.h3{font-size:1.05rem;font-weight:800;color:var(--teal-l);margin:1.4rem 0 .55rem}
+.sub{font-size:1.04rem;color:var(--text-mid);max-width:780px;margin-bottom:2.2rem;line-height:1.7}
+p{color:var(--text-mid);margin-bottom:1rem}
+ul,ol{color:var(--text-mid);margin:0 0 1rem 1.4rem}
+li{margin-bottom:.45rem}
+code.inline{font-size:.86em;background:rgba(0,200,200,.14);padding:.12em .45em;border-radius:5px;color:var(--teal-l);font-family:'Fira Code',ui-monospace,monospace}
+strong{color:var(--text)}
+
+/* HERO */
+#hero{min-height:60vh;background:var(--bg);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;padding:7rem 2rem 3rem}
+.hbg{position:absolute;inset:0;background:radial-gradient(ellipse 85% 60% at 50% 35%,rgba(0,200,200,.16) 0%,transparent 70%),radial-gradient(ellipse 50% 40% at 78% 72%,rgba(255,185,64,.1) 0%,transparent 60%),radial-gradient(ellipse 40% 35% at 18% 78%,rgba(168,85,247,.09) 0%,transparent 60%);pointer-events:none}
+.hgrid{position:absolute;inset:0;opacity:.04;background-image:linear-gradient(rgba(0,200,200,1) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,200,1) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
+.hinner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:.55rem;background:rgba(0,200,200,.14);border:1px solid rgba(0,200,200,.4);border-radius:50px;padding:.4rem 1.1rem;font-size:.78rem;font-weight:800;color:var(--teal-l);letter-spacing:.06em;margin-bottom:1.6rem}
+.htitle{font-size:clamp(2.4rem,6.5vw,4.6rem);font-weight:900;line-height:1.03;letter-spacing:-.03em;background:linear-gradient(130deg,#fff 0%,var(--teal-l) 45%,var(--gold) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1.1rem}
+.hsub{font-size:clamp(1rem,1.7vw,1.18rem);color:var(--text-mid);max-width:720px;margin:0 auto;line-height:1.65}
+
+/* SECTIONS */
+section{padding:4.5rem 0;border-top:1px solid rgba(0,200,200,.08)}
+section.alt{background:linear-gradient(180deg,var(--bg) 0%,#080F25 100%)}
+
+/* CODE WINDOW */
+.code-win{background:#0A101F;border:1px solid rgba(0,200,200,.22);border-radius:13px;overflow:hidden;margin:1rem 0 1.4rem;box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.cw-top{background:#0F1A33;padding:.65rem 1.05rem;display:flex;align-items:center;gap:.45rem;border-bottom:1px solid rgba(0,200,200,.18)}
+.dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.dr{background:#FF5F57}.dy{background:#FFBD2E}.dg{background:#28C840}
+.cw-lbl{font-size:.78rem;color:var(--text-mid);margin-left:.45rem;font-weight:600}
+.cw-body{padding:1.25rem 1.4rem;font-family:'Fira Code',ui-monospace,Consolas,monospace;font-size:.83rem;line-height:1.85;overflow-x:auto;color:var(--text)}
+pre{white-space:pre;font-family:inherit;margin:0}
+.kw{color:#FF87A2}.s{color:#A5D6FF}.fn{color:#D2A8FF}.v{color:#FFC182}.cm{color:#8B9FBF}.ok{color:#7EE787}.an{color:#FFD080}.cl{color:#B4F0F0}.ty{color:#79C0FF}
+
+/* COMPONENT HIERARCHY DIAGRAM */
+.hier{display:flex;flex-direction:column;align-items:center;gap:.6rem;margin:1.5rem 0 2rem}
+.hier-node{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:11px;padding:.85rem 1.4rem;min-width:340px;text-align:center;position:relative}
+.hier-node .n{font-family:'Fira Code',ui-monospace,monospace;font-weight:800;color:var(--teal-l);font-size:.95rem}
+.hier-node .l{font-size:.72rem;color:var(--dim);margin-top:.2rem;letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+.hier-node .desc{font-size:.78rem;color:var(--text-mid);margin-top:.45rem}
+.hier-arr{color:var(--teal);font-size:1.3rem;line-height:1}
+.hier-node.custom{border-color:var(--gold);background:linear-gradient(180deg,rgba(255,185,64,.08),var(--card2))}
+.hier-node.custom .n{color:var(--gold-l)}
+
+/* CARDS */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem;margin:1.5rem 0}
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px;padding:1.3rem 1.4rem}
+.card .t{font-family:'Fira Code',ui-monospace,monospace;font-weight:800;color:var(--teal-l);font-size:.92rem;margin-bottom:.55rem}
+.card .d{font-size:.88rem;color:var(--text-mid);line-height:1.6}
+.card .l{font-size:.7rem;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;font-weight:800;margin-bottom:.4rem}
+
+/* TWO-COL */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:1.5rem 0}
+@media (max-width:900px){.two-col{grid-template-columns:1fr}}
+
+/* CALLOUT */
+.callout{border-radius:12px;padding:1.1rem 1.3rem;margin:1.2rem 0;display:flex;gap:.95rem;align-items:flex-start;border:1px solid}
+.callout-warn{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.32)}
+.callout-warn .ic{color:var(--red-l)}
+.callout-info{background:rgba(0,200,200,.06);border-color:rgba(0,200,200,.3)}
+.callout-info .ic{color:var(--teal-l)}
+.callout-good{background:rgba(16,185,129,.06);border-color:rgba(16,185,129,.3)}
+.callout-good .ic{color:var(--green-l)}
+.callout .ic{font-size:1.2rem;line-height:1.4;flex-shrink:0}
+.callout .body{font-size:.92rem;color:var(--text-mid);line-height:1.65}
+.callout .body b{color:var(--text);display:block;margin-bottom:.25rem;font-size:.95rem}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;margin:1.2rem 0;background:var(--card);border:1px solid var(--border);border-radius:11px;overflow:hidden}
+th,td{padding:.85rem 1.1rem;text-align:left;font-size:.88rem;border-bottom:1px solid rgba(0,200,200,.13)}
+th{background:rgba(0,200,200,.1);color:var(--teal-l);font-weight:800;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase}
+td{color:var(--text-mid)}
+tr:last-child td{border-bottom:none}
+td code{font-family:'Fira Code',ui-monospace,monospace;font-size:.84em;color:var(--gold-l)}
+
+/* SIDE BY SIDE CODE */
+.codepair{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 1.5rem}
+@media (max-width:1000px){.codepair{grid-template-columns:1fr}}
+.codepair .code-win{margin:0}
+
+/* FOOT */
+footer{padding:3rem 2rem;text-align:center;border-top:1px solid var(--border);color:var(--dim);font-size:.85rem}
+
+/* ANCHOR OFFSET */
+section{scroll-margin-top:80px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nb">HILT · DI GUIDE</div>
+  <div class="nl">
+    <a href="#components">Components</a>
+    <a href="#scoping">Scoping</a>
+    <a href="#binds-provides">@Binds vs @Provides</a>
+    <a href="#example">Real Example</a>
+    <a href="#project">In This Project</a>
+  </div>
+</nav>
+
+<section id="hero">
+  <div class="hbg"></div>
+  <div class="hgrid"></div>
+  <div class="hinner wrap">
+    <div class="badge">DEPENDENCY INJECTION · KOTLIN · ANDROID</div>
+    <h1 class="htitle">Hilt, Demystified</h1>
+    <p class="hsub">Components, Scoping, and the <code class="inline">@Binds</code> annotation — the three concepts that separate "Hilt compiles" from "Hilt actually models your app's lifetimes correctly." Grounded in the Bizplay IPPP framework's custom <code class="inline">LoggedInComponent</code> design.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── SECTION 1: COMPONENTS ───────────────────────── -->
+<section id="components">
+  <div class="wrap">
+    <div class="lbl">Section 1</div>
+    <h1 class="h1">Hilt Components &amp; the Hierarchy</h1>
+    <p class="sub">A <strong>Hilt Component</strong> is a dependency graph with a lifetime. Hilt generates one component per Android container (Application, Activity, Fragment, ViewModel, Service) and wires them into a tree. Where a binding "lives" is decided by which component it's installed in — and that decides when it's created, when it's destroyed, and who can inject it.</p>
+
+    <h2 class="h2">The Built-In Hierarchy</h2>
+    <p>Hilt creates these components automatically. Each child can see everything its parents expose; parents cannot see into children.</p>
+
+    <div class="hier">
+      <div class="hier-node">
+        <div class="n">SingletonComponent</div>
+        <div class="l">Application</div>
+        <div class="desc">Created in <code class="inline">Application.onCreate()</code>, lives until the process dies. Home of <code class="inline">@Singleton</code>.</div>
+      </div>
+      <div class="hier-arr">▼</div>
+      <div class="hier-node">
+        <div class="n">ActivityRetainedComponent</div>
+        <div class="l">Survives Configuration Changes</div>
+        <div class="desc">Lives across rotation. Parent of <code class="inline">ViewModelComponent</code>. Scope: <code class="inline">@ActivityRetainedScoped</code>.</div>
+      </div>
+      <div class="hier-arr">▼</div>
+      <div class="hier-node">
+        <div class="n">ViewModelComponent</div>
+        <div class="l">Per-ViewModel</div>
+        <div class="desc">One per <code class="inline">@HiltViewModel</code> instance. Scope: <code class="inline">@ViewModelScoped</code>.</div>
+      </div>
+      <div class="hier-arr">▼</div>
+      <div class="hier-node">
+        <div class="n">ActivityComponent</div>
+        <div class="l">Activity Lifecycle</div>
+        <div class="desc">Dies on <code class="inline">onDestroy()</code>; recreated on rotation. Scope: <code class="inline">@ActivityScoped</code>.</div>
+      </div>
+      <div class="hier-arr">▼</div>
+      <div class="hier-node">
+        <div class="n">FragmentComponent / ViewComponent / ServiceComponent</div>
+        <div class="l">Leaves of the tree</div>
+        <div class="desc">Bound to Fragment / View / Service lifecycles respectively.</div>
+      </div>
+    </div>
+
+    <h2 class="h2">Component Reference Card</h2>
+    <table>
+      <thead>
+        <tr><th>Component</th><th>Scope Annotation</th><th>Lifetime</th><th>Inject into</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>SingletonComponent</code></td><td><code>@Singleton</code></td><td>Application process</td><td>Application, anywhere downstream</td></tr>
+        <tr><td><code>ActivityRetainedComponent</code></td><td><code>@ActivityRetainedScoped</code></td><td>Survives config changes</td><td>ViewModels (via parent)</td></tr>
+        <tr><td><code>ViewModelComponent</code></td><td><code>@ViewModelScoped</code></td><td>Single ViewModel instance</td><td>@HiltViewModel classes</td></tr>
+        <tr><td><code>ActivityComponent</code></td><td><code>@ActivityScoped</code></td><td>Activity onCreate → onDestroy</td><td>Activities, Fragments, Views</td></tr>
+        <tr><td><code>FragmentComponent</code></td><td><code>@FragmentScoped</code></td><td>Fragment lifecycle</td><td>Fragments, Views inside</td></tr>
+        <tr><td><code>ViewComponent</code></td><td><code>@ViewScoped</code></td><td>View attached</td><td>Custom Views</td></tr>
+        <tr><td><code>ServiceComponent</code></td><td><code>@ServiceScoped</code></td><td>Service lifetime</td><td>Services</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="h2">How Dependencies Flow Down the Tree</h2>
+    <p>A binding in a <strong>parent</strong> is visible to all <strong>descendants</strong>. So when you write:</p>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">NetworkModule.kt — installed in SingletonComponent</span></div>
+      <div class="cw-body"><pre><span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">SingletonComponent</span>::<span class="kw">class</span>)
+<span class="kw">object</span> <span class="ty">NetworkModule</span> {
+
+    <span class="an">@Provides</span> <span class="an">@Singleton</span>
+    <span class="kw">fun</span> <span class="fn">okHttp</span>(): <span class="ty">OkHttpClient</span> = <span class="ty">OkHttpClient</span>.<span class="ty">Builder</span>().<span class="fn">build</span>()
+}</pre></div>
+    </div>
+
+    <p>...the same <code class="inline">OkHttpClient</code> instance can be injected into a <code>@HiltViewModel</code>, an <code>Activity</code>, a <code>Service</code>, or anything else — because all of those live inside child components of <code>SingletonComponent</code>.</p>
+
+    <div class="callout callout-info">
+      <div class="ic">●</div>
+      <div class="body"><b>Rule of thumb: install bindings at the highest sensible component.</b>Installing a binding lower in the tree restricts who can see it. Don't push everything to <code class="inline">SingletonComponent</code> just because it's easy — match the install scope to the actual lifetime you want.</div>
+    </div>
+
+    <h2 class="h2">Custom Components: When the Built-Ins Aren't Enough</h2>
+    <p>The Android lifecycle doesn't always match your app's <em>logical</em> lifecycle. This project is a prime example — a corporate-expense app where many objects (repositories, encryption keys, the active session, variant policies) should live exactly as long as the user is logged in. There's no built-in Hilt component for "logged-in session." So this project defines a <strong>custom component</strong>:</p>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:app/di/LoggedInComponent.kt — custom session-scoped component</span></div>
+      <div class="cw-body"><pre><span class="cm">// 1. Define the scope annotation</span>
+<span class="an">@Scope</span>
+<span class="an">@Retention</span>(<span class="ty">AnnotationRetention</span>.<span class="v">RUNTIME</span>)
+<span class="kw">annotation class</span> <span class="ty">LoggedInScoped</span>
+
+<span class="cm">// 2. Define the component, parent = SingletonComponent</span>
+<span class="an">@LoggedInScoped</span>
+<span class="an">@DefineComponent</span>(parent = <span class="ty">SingletonComponent</span>::<span class="kw">class</span>)
+<span class="kw">interface</span> <span class="ty">LoggedInComponent</span> {
+    <span class="an">@DefineComponent.Builder</span>
+    <span class="kw">interface</span> <span class="ty">Builder</span> {
+        <span class="kw">fun</span> <span class="fn">session</span>(<span class="an">@BindsInstance</span> session: <span class="ty">Session</span>): <span class="ty">Builder</span>
+        <span class="kw">fun</span> <span class="fn">variant</span>(<span class="an">@BindsInstance</span> variant: <span class="ty">VariantContext</span>): <span class="ty">Builder</span>
+        <span class="kw">fun</span> <span class="fn">tenant</span>(<span class="an">@BindsInstance</span> tenant: <span class="ty">TenantContext</span>): <span class="ty">Builder</span>
+        <span class="kw">fun</span> <span class="fn">build</span>(): <span class="ty">LoggedInComponent</span>
+    }
+}</pre></div>
+    </div>
+
+    <p>This component is built once at login (in <code class="inline">LoggedInComponentManager</code>) and dropped at logout — every <code class="inline">@LoggedInScoped</code> instance becomes GC-eligible. That's the Hilt mechanism powering the framework's "one variant + one tenant, bound at login" invariant.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── SECTION 2: SCOPING ───────────────────────── -->
+<section id="scoping" class="alt">
+  <div class="wrap">
+    <div class="lbl">Section 2</div>
+    <h1 class="h1">Scoping Annotations</h1>
+    <p class="sub">A <strong>scope</strong> tells Hilt: "the same instance, every time, for the lifetime of this component." Without a scope, Hilt creates a new instance on every injection. Choosing the right scope is choosing the right lifetime — get it wrong and you'll either thrash GC with unnecessary allocations or leak memory by holding state too long.</p>
+
+    <h2 class="h2">Unscoped vs Scoped</h2>
+    <div class="two-col">
+      <div class="code-win">
+        <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">UNSCOPED — new instance per inject</span></div>
+        <div class="cw-body"><pre><span class="an">@Provides</span>
+<span class="kw">fun</span> <span class="fn">requestIdGenerator</span>(): <span class="ty">RequestIdGenerator</span> {
+    <span class="kw">return</span> <span class="ty">RequestIdGenerator</span>()
+}
+
+<span class="cm">// Every @Inject of RequestIdGenerator</span>
+<span class="cm">// gets a fresh instance. Fine for</span>
+<span class="cm">// stateless helpers or factories.</span></pre></div>
+      </div>
+      <div class="code-win">
+        <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">SCOPED — one shared instance</span></div>
+        <div class="cw-body"><pre><span class="an">@Provides</span> <span class="an">@Singleton</span>
+<span class="kw">fun</span> <span class="fn">okHttp</span>(): <span class="ty">OkHttpClient</span> {
+    <span class="kw">return</span> <span class="ty">OkHttpClient</span>.<span class="ty">Builder</span>().<span class="fn">build</span>()
+}
+
+<span class="cm">// One OkHttpClient for the whole</span>
+<span class="cm">// process. Connection pool, cache,</span>
+<span class="cm">// and threadpool are shared.</span></pre></div>
+      </div>
+    </div>
+
+    <h2 class="h2">When to Scope &mdash; And When Not To</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="l">SCOPE IT</div>
+        <div class="t">Expensive to construct</div>
+        <div class="d">Retrofit, OkHttp, Room — anything wrapping a thread pool, native handle, or large allocation.</div>
+      </div>
+      <div class="card">
+        <div class="l">SCOPE IT</div>
+        <div class="t">Holds shared state</div>
+        <div class="d">In-memory caches, session state, observable flows that consumers must agree on.</div>
+      </div>
+      <div class="card">
+        <div class="l">SCOPE IT</div>
+        <div class="t">Identity matters</div>
+        <div class="d">A repository whose internal <code>StateFlow</code> must be the same instance for every collector.</div>
+      </div>
+      <div class="card">
+        <div class="l">DON'T SCOPE</div>
+        <div class="t">Stateless &amp; cheap</div>
+        <div class="d">Mappers, formatters, request builders. Constructing them is essentially free.</div>
+      </div>
+      <div class="card">
+        <div class="l">DON'T SCOPE</div>
+        <div class="t">Short-lived helpers</div>
+        <div class="d">If lifetime doesn't matter, don't bind one — let Hilt make a new one and let it die.</div>
+      </div>
+      <div class="card">
+        <div class="l">DON'T SCOPE</div>
+        <div class="t">Just to "be safe"</div>
+        <div class="d">Scope is a memory contract, not a perf optimization. Wrong scope is worse than no scope.</div>
+      </div>
+    </div>
+
+    <h2 class="h2">Memory Leaks: The Cost of Over-Scoping</h2>
+    <p>The classic Hilt mistake: <strong>injecting a short-lived dependency into a long-lived scope</strong>. The long-lived scope holds the reference; the short-lived object can never be collected.</p>
+
+    <div class="callout callout-warn">
+      <div class="ic">⚠</div>
+      <div class="body"><b>Anti-pattern: leaking an Activity Context into a Singleton</b>
+      Asking Hilt to provide <code class="inline">@ActivityContext Context</code> into a <code class="inline">@Singleton</code> binding will fail to compile — Hilt catches it. But the same mistake is possible at the architecture level: scoping a class that <em>holds</em> a Context-bearing field as <code class="inline">@Singleton</code> will silently leak that Activity for the whole process. Audit the transitive fields of every <code class="inline">@Singleton</code>.</div>
+    </div>
+
+    <div class="callout callout-warn">
+      <div class="ic">⚠</div>
+      <div class="body"><b>Anti-pattern: scoping per-session state to <code class="inline">@Singleton</code></b>
+      In this project, scoping the <code class="inline">Session</code> or <code class="inline">AuthToken</code> as <code class="inline">@Singleton</code> would mean the credentials survive logout — a security regression. That's why the framework defines <code class="inline">@LoggedInScoped</code>: a scope tied to the login lifetime, not the process lifetime. Drop the component → all sensitive references become GC-eligible immediately.</div>
+    </div>
+
+    <div class="callout callout-good">
+      <div class="ic">✓</div>
+      <div class="body"><b>Right-sized scoping checklist</b>
+      <ol style="margin:.4rem 0 0 1.2rem">
+        <li>What's the longest this instance should live?</li>
+        <li>Pick the smallest component whose lifetime matches.</li>
+        <li>Audit transitive state — does it hold anything bigger than itself?</li>
+        <li>If unsure, leave it unscoped. You can always scope it later.</li>
+      </ol></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── SECTION 3: @Binds vs @Provides ───────────────────────── -->
+<section id="binds-provides">
+  <div class="wrap">
+    <div class="lbl">Section 3</div>
+    <h1 class="h1"><code style="font-family:inherit">@Binds</code> vs <code style="font-family:inherit">@Provides</code></h1>
+    <p class="sub">Both annotations tell Hilt how to satisfy a dependency request. The difference is mechanical at the source level but significant at compile time — <code class="inline">@Binds</code> generates strictly less code and runs strictly faster.</p>
+
+    <h2 class="h2">The Mental Model</h2>
+    <ul>
+      <li><code class="inline">@Provides</code> &mdash; "Here's a function. Call it to build the instance." Used when you need to <strong>construct</strong> something — call a builder, configure it, return it.</li>
+      <li><code class="inline">@Binds</code> &mdash; "When someone asks for this interface, give them this implementation." Used when you have a class with an <code class="inline">@Inject constructor()</code> and just need to tell Hilt which interface it satisfies.</li>
+    </ul>
+
+    <h2 class="h2">Side-by-Side: The Exact Syntax Difference</h2>
+    <p>Same goal — bind <code class="inline">AuthRepository</code> (interface) to <code class="inline">IpppAuthRepo</code> (implementation). Two ways to write it:</p>
+
+    <div class="codepair">
+      <div class="code-win">
+        <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">@Provides — works, but more code</span></div>
+        <div class="cw-body"><pre><span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">SingletonComponent</span>::<span class="kw">class</span>)
+<span class="kw">object</span> <span class="ty">AuthModule</span> {
+
+    <span class="an">@Provides</span>
+    <span class="an">@Singleton</span>
+    <span class="kw">fun</span> <span class="fn">authRepository</span>(
+        api: <span class="ty">IpppAuthApi</span>,
+        session: <span class="ty">SessionStore</span>,
+    ): <span class="ty">AuthRepository</span> {
+        <span class="kw">return</span> <span class="ty">IpppAuthRepo</span>(api, session)
+    }
+}
+
+<span class="cm">// Module is `object` (or has companion).</span>
+<span class="cm">// Function manually calls the constructor.</span>
+<span class="cm">// You must list every dependency by hand.</span></pre></div>
+      </div>
+
+      <div class="code-win">
+        <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">@Binds — preferred for interfaces</span></div>
+        <div class="cw-body"><pre><span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">SingletonComponent</span>::<span class="kw">class</span>)
+<span class="kw">abstract class</span> <span class="ty">AuthModule</span> {
+
+    <span class="an">@Binds</span>
+    <span class="an">@Singleton</span>
+    <span class="kw">abstract fun</span> <span class="fn">authRepository</span>(
+        impl: <span class="ty">IpppAuthRepo</span>,
+    ): <span class="ty">AuthRepository</span>
+}
+
+<span class="cm">// Module is `abstract class`.</span>
+<span class="cm">// Function is `abstract` — no body.</span>
+<span class="cm">// IpppAuthRepo must have @Inject constructor.</span>
+<span class="cm">// Hilt wires the constructor params for you.</span></pre></div>
+      </div>
+    </div>
+
+    <h2 class="h2">When to Use Which</h2>
+    <table>
+      <thead>
+        <tr><th>Use <code>@Binds</code> when…</th><th>Use <code>@Provides</code> when…</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>You're binding an interface to an implementation</td>
+          <td>You're providing a type you don't own (Retrofit, OkHttpClient, Room)</td>
+        </tr>
+        <tr>
+          <td>The implementation has an <code>@Inject constructor()</code></td>
+          <td>Construction requires builder configuration or factory calls</td>
+        </tr>
+        <tr>
+          <td>You want minimal boilerplate</td>
+          <td>You need conditional logic or computed defaults</td>
+        </tr>
+        <tr>
+          <td>You're using multibindings (<code>@IntoMap</code>, <code>@IntoSet</code>) with interface impls</td>
+          <td>You're providing primitives or values from a config</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="h2">Why Prefer <code>@Binds</code>?</h2>
+    <ol>
+      <li><strong>Less generated code.</strong> <code>@Provides</code> generates a factory class with a method that calls your function. <code>@Binds</code> generates a typecast — that's it. Smaller APK, faster build.</li>
+      <li><strong>Less to maintain.</strong> If <code>IpppAuthRepo</code>'s constructor signature changes (a new parameter is added), the <code>@Binds</code> version <em>does not need to be touched</em>. With <code>@Provides</code>, you'd update the function signature too.</li>
+      <li><strong>Catches dead code.</strong> If the implementation doesn't have an <code>@Inject</code> constructor, <code>@Binds</code> fails to compile — forcing you to be explicit about how the impl is constructable.</li>
+    </ol>
+
+    <h2 class="h2">The Three Rules of <code>@Binds</code></h2>
+    <div class="callout callout-info">
+      <div class="ic">●</div>
+      <div class="body">
+        <ol style="margin:.2rem 0 0 1.2rem">
+          <li>The module must be an <code class="inline">abstract class</code> (not <code class="inline">object</code>).</li>
+          <li>The function must be <code class="inline">abstract</code> and take <strong>exactly one parameter</strong> — the implementation type.</li>
+          <li>The return type must be the interface (or supertype) you're binding to.</li>
+        </ol>
+      </div>
+    </div>
+
+    <p>You can mix <code class="inline">@Binds</code> and <code class="inline">@Provides</code> in the same module: declare the module as <code class="inline">abstract class</code>, put <code class="inline">@Binds</code> functions on it directly, and put <code class="inline">@Provides</code> functions in a <code class="inline">companion object</code>. This project uses exactly that pattern in <code class="inline">DataModule</code> — see <a href="#example" style="color:var(--teal-l)">the real-world example below</a>.</p>
+  </div>
+</section>
+
+<!-- ───────────────────────── SECTION 4: REAL EXAMPLE ───────────────────────── -->
+<section id="example" class="alt">
+  <div class="wrap">
+    <div class="lbl">Section 4</div>
+    <h1 class="h1">Real-World Code Example</h1>
+    <p class="sub">A complete, production-shaped example: an Activity injects a logger interface, whose implementation lives in a separate file and is wired in via <code class="inline">@Binds</code>. This is the canonical Hilt + interfaces + Activity pattern.</p>
+
+    <h3 class="h3">Step 1 — The interface and implementation</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">analytics/AnalyticsTracker.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">interface</span> <span class="ty">AnalyticsTracker</span> {
+    <span class="kw">fun</span> <span class="fn">track</span>(event: <span class="ty">String</span>, params: <span class="ty">Map</span>&lt;<span class="ty">String</span>, <span class="ty">Any</span>&gt; = <span class="fn">emptyMap</span>())
+    <span class="kw">fun</span> <span class="fn">screen</span>(name: <span class="ty">String</span>)
+}</pre></div>
+    </div>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">analytics/FirebaseAnalyticsTracker.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">import</span> com.google.firebase.analytics.<span class="ty">FirebaseAnalytics</span>
+<span class="kw">import</span> javax.inject.<span class="ty">Inject</span>
+<span class="kw">import</span> javax.inject.<span class="ty">Singleton</span>
+
+<span class="an">@Singleton</span>
+<span class="kw">class</span> <span class="ty">FirebaseAnalyticsTracker</span> <span class="an">@Inject</span> <span class="kw">constructor</span>(
+    <span class="kw">private val</span> firebase: <span class="ty">FirebaseAnalytics</span>,
+) : <span class="ty">AnalyticsTracker</span> {
+
+    <span class="kw">override fun</span> <span class="fn">track</span>(event: <span class="ty">String</span>, params: <span class="ty">Map</span>&lt;<span class="ty">String</span>, <span class="ty">Any</span>&gt;) {
+        firebase.<span class="fn">logEvent</span>(event, params.<span class="fn">toBundle</span>())
+    }
+
+    <span class="kw">override fun</span> <span class="fn">screen</span>(name: <span class="ty">String</span>) {
+        firebase.<span class="fn">logEvent</span>(<span class="ty">FirebaseAnalytics</span>.<span class="ty">Event</span>.<span class="v">SCREEN_VIEW</span>, <span class="fn">bundleOf</span>(
+            <span class="ty">FirebaseAnalytics</span>.<span class="ty">Param</span>.<span class="v">SCREEN_NAME</span> <span class="kw">to</span> name,
+        ))
+    }
+}</pre></div>
+    </div>
+
+    <h3 class="h3">Step 2 — The Hilt module with <code>@Binds</code></h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">analytics/AnalyticsModule.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">import</span> com.google.firebase.<span class="ty">Firebase</span>
+<span class="kw">import</span> com.google.firebase.analytics.<span class="ty">FirebaseAnalytics</span>
+<span class="kw">import</span> com.google.firebase.analytics.analytics
+<span class="kw">import</span> dagger.<span class="ty">Binds</span>
+<span class="kw">import</span> dagger.<span class="ty">Module</span>
+<span class="kw">import</span> dagger.<span class="ty">Provides</span>
+<span class="kw">import</span> dagger.hilt.<span class="ty">InstallIn</span>
+<span class="kw">import</span> dagger.hilt.components.<span class="ty">SingletonComponent</span>
+<span class="kw">import</span> javax.inject.<span class="ty">Singleton</span>
+
+<span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">SingletonComponent</span>::<span class="kw">class</span>)
+<span class="kw">abstract class</span> <span class="ty">AnalyticsModule</span> {
+
+    <span class="cm">// @Binds for the interface → impl edge.</span>
+    <span class="cm">// The impl's constructor is wired automatically.</span>
+    <span class="an">@Binds</span>
+    <span class="an">@Singleton</span>
+    <span class="kw">abstract fun</span> <span class="fn">bindAnalyticsTracker</span>(
+        impl: <span class="ty">FirebaseAnalyticsTracker</span>,
+    ): <span class="ty">AnalyticsTracker</span>
+
+    <span class="kw">companion object</span> {
+        <span class="cm">// @Provides for the SDK type we don't own.</span>
+        <span class="an">@Provides</span>
+        <span class="an">@Singleton</span>
+        <span class="kw">fun</span> <span class="fn">firebaseAnalytics</span>(): <span class="ty">FirebaseAnalytics</span> = <span class="ty">Firebase</span>.analytics
+    }
+}</pre></div>
+    </div>
+
+    <p>Both patterns coexist in one module: <code class="inline">@Binds</code> for the interface binding, and a <code class="inline">companion object</code> with <code class="inline">@Provides</code> for the SDK-owned type (<code class="inline">FirebaseAnalytics</code>) we can't annotate with <code class="inline">@Inject</code>.</p>
+
+    <h3 class="h3">Step 3 — Inject into an Activity</h3>
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">ui/SettingsActivity.kt</span></div>
+      <div class="cw-body"><pre><span class="kw">import</span> android.os.<span class="ty">Bundle</span>
+<span class="kw">import</span> androidx.activity.<span class="ty">ComponentActivity</span>
+<span class="kw">import</span> dagger.hilt.android.<span class="ty">AndroidEntryPoint</span>
+<span class="kw">import</span> javax.inject.<span class="ty">Inject</span>
+
+<span class="an">@AndroidEntryPoint</span>
+<span class="kw">class</span> <span class="ty">SettingsActivity</span> : <span class="ty">ComponentActivity</span>() {
+
+    <span class="an">@Inject</span> <span class="kw">lateinit var</span> analytics: <span class="ty">AnalyticsTracker</span>
+
+    <span class="kw">override fun</span> <span class="fn">onCreate</span>(savedInstanceState: <span class="ty">Bundle</span>?) {
+        <span class="kw">super</span>.<span class="fn">onCreate</span>(savedInstanceState)
+        analytics.<span class="fn">screen</span>(<span class="s">"settings"</span>)
+        <span class="cm">// …rest of onCreate</span>
+    }
+}</pre></div>
+    </div>
+
+    <p>The Activity depends on the <strong>interface</strong>, not the implementation. <code class="inline">@AndroidEntryPoint</code> tells Hilt to generate the field-injection plumbing. The implementation is swappable in tests: replace the <code class="inline">@Binds</code> in a test module with a fake tracker, and <code class="inline">SettingsActivity</code> never knows the difference.</p>
+
+    <div class="callout callout-good">
+      <div class="ic">✓</div>
+      <div class="body"><b>Why this is the canonical shape</b>
+      The Activity sees one type (the interface). The wiring lives in one module. Construction is implicit (via <code class="inline">@Inject constructor</code>). Adding a parameter to <code class="inline">FirebaseAnalyticsTracker</code> requires zero changes to <code class="inline">AnalyticsModule</code> or <code class="inline">SettingsActivity</code>. That's Hilt earning its keep.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── SECTION 5: IN THIS PROJECT ───────────────────────── -->
+<section id="project">
+  <div class="wrap">
+    <div class="lbl">Section 5</div>
+    <h1 class="h1">How This Project Uses Hilt</h1>
+    <p class="sub">The Bizplay IPPP framework leans heavily on Hilt — not just for plumbing, but as the <em>mechanism that enforces the architecture</em>. Three patterns are worth highlighting.</p>
+
+    <h2 class="h2">1. Custom <code>LoggedInComponent</code> for Session-Scoped State</h2>
+    <p>The framework's load-bearing invariant: <em>the variant and tenant bind once at login and stay</em>. Hilt's built-in components don't model "logged-in session," so the project defines a custom one. Every per-session binding (repositories, the active <code class="inline">VariantContext</code>, the <code class="inline">TenantContext</code>, encryption keys) is installed in <code class="inline">LoggedInComponent</code> with <code class="inline">@LoggedInScoped</code>. On logout, <code class="inline">LoggedInComponentManager.drop()</code> releases the component — every scoped instance becomes GC-eligible at once.</p>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:data/di/DataModule.kt — repository bindings (@Binds + @Provides combined)</span></div>
+      <div class="cw-body"><pre><span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">LoggedInComponent</span>::<span class="kw">class</span>)
+<span class="kw">abstract class</span> <span class="ty">DataModule</span> {
+
+    <span class="an">@Binds</span> <span class="an">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">authRepo</span>(impl: <span class="ty">IpppAuthRepo</span>): <span class="ty">AuthRepository</span>
+
+    <span class="an">@Binds</span> <span class="an">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">receiptRepo</span>(impl: <span class="ty">IpppReceiptRepo</span>): <span class="ty">ReceiptRepository</span>
+
+    <span class="an">@Binds</span> <span class="an">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">approvalRepo</span>(impl: <span class="ty">IpppApprovalRepo</span>): <span class="ty">ApprovalRepository</span>
+
+    <span class="cm">// …and four more — one @Binds per :core repository interface</span>
+
+    <span class="kw">companion object</span> {
+        <span class="an">@Provides</span> <span class="an">@LoggedInScoped</span>
+        <span class="kw">fun</span> <span class="fn">ipppRetrofit</span>(
+            factory: <span class="ty">RetrofitFactory</span>,
+            config: <span class="ty">RuntimeConfig</span>,
+        ): <span class="ty">Retrofit</span> = factory.<span class="fn">builder</span>(config.urls.main).<span class="fn">build</span>()
+
+        <span class="an">@Provides</span> <span class="an">@LoggedInScoped</span>
+        <span class="kw">fun</span> <span class="fn">authApi</span>(retrofit: <span class="ty">Retrofit</span>): <span class="ty">IpppAuthApi</span> =
+            retrofit.<span class="fn">create</span>(<span class="ty">IpppAuthApi</span>::<span class="kw">class</span>.java)
+
+        <span class="cm">// …and six more *Api creates</span>
+    }
+}</pre></div>
+    </div>
+
+    <p>The interface-to-impl wiring uses <code class="inline">@Binds</code> (the repos have <code class="inline">@Inject</code> constructors). The Retrofit instances use <code class="inline">@Provides</code> because we need to call <code class="inline">retrofit.create()</code> ourselves.</p>
+
+    <h2 class="h2">2. Multibindings as the Single Point of Variant Dispatch</h2>
+    <p>The hardest architectural rule in this project: <strong>no code branches on <code class="inline">variantId</code> or <code class="inline">tenantId</code> for dispatch</strong>. Every variant binds the same set of <code class="inline">:core</code> policy interfaces. Plain <code class="inline">@Binds</code> would error on duplicate bindings, so the framework uses Dagger multibindings keyed on variant ID:</p>
+
+    <div class="code-win">
+      <div class="cw-top"><span class="dot dr"></span><span class="dot dy"></span><span class="dot dg"></span><span class="cw-lbl">:variants-kr/di/KrVariantModule.kt</span></div>
+      <div class="cw-body"><pre><span class="an">@Module</span>
+<span class="an">@InstallIn</span>(<span class="ty">LoggedInComponent</span>::<span class="kw">class</span>)
+<span class="kw">abstract class</span> <span class="ty">KrVariantModule</span> {
+
+    <span class="an">@Binds</span> <span class="an">@IntoMap</span> <span class="an">@VariantKey</span>(<span class="s">"kr"</span>) <span class="an">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">amountPolicy</span>(impl: <span class="ty">KrExpenseAmountPolicy</span>): <span class="ty">ExpenseAmountPolicy</span>
+
+    <span class="an">@Binds</span> <span class="an">@IntoMap</span> <span class="an">@VariantKey</span>(<span class="s">"kr"</span>) <span class="an">@LoggedInScoped</span>
+    <span class="kw">abstract fun</span> <span class="fn">receiptRenderer</span>(impl: <span class="ty">KrReceiptRenderer</span>): <span class="ty">ReceiptRenderer</span>
+
+    <span class="cm">// …one @IntoMap @VariantKey("kr") binding per :core policy interface</span>
+}</pre></div>
+    </div>
+
+    <p>Each variant's module binds <em>its own</em> implementations into the same maps. A small <code class="inline">VariantResolverModule</code> in <code class="inline">:app</code> does <em>one</em> lookup — <code class="inline">map[session.variant.id]</code> — and exposes the result as the live binding. Adding a new variant requires <em>zero</em> changes anywhere else. Hilt does the dispatch via type, not <code class="inline">if</code>/<code class="inline">when</code>.</p>
+
+    <h2 class="h2">3. <code>@InstallIn</code> Enforces the Module Topology</h2>
+    <p>The architecture forbids <code class="inline">:features</code> from depending on <code class="inline">:data</code> or <code class="inline">:variants-*</code> — the Logic-Blind rule. Hilt makes this both visible and enforceable: every binding declares <code class="inline">@InstallIn(LoggedInComponent::class)</code>, so features inject <code class="inline">:core</code> interfaces and Hilt resolves them at compile time from whichever module provided the impl. The feature module never imports the concrete class — it doesn't even know it exists.</p>
+
+    <div class="callout callout-info">
+      <div class="ic">●</div>
+      <div class="body"><b>The big idea</b>
+      Hilt isn't just plumbing in this project — it's the architectural firewall. Custom components model the right lifetimes (<code class="inline">LoggedInComponent</code> = login session). Multibindings replace branching on identifiers. <code class="inline">@Binds</code> keeps the boilerplate-to-signal ratio low across dozens of repository interfaces. Get these three right and the rest of the codebase follows.</div>
+    </div>
+
+    <h2 class="h2">Further Reading in the Docs</h2>
+    <ul>
+      <li><strong>docs/08-app-orchestrator.md</strong> — the DI registry and <code class="inline">LoggedInComponent</code> lifecycle</li>
+      <li><strong>docs/05-data.md</strong> §5 — <code class="inline">DataModule</code> binding pattern</li>
+      <li><strong>docs/07-variants.md</strong> §6 — multibindings &amp; <code class="inline">VariantResolverModule</code></li>
+      <li><strong>docs/10-boot-phases.md</strong> — when the component is built and dropped</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Hilt DI Guide · Bizplay IPPP framework · Kotlin, Compose, Hilt, MVI
+</footer>
+
+</body>
+</html>
