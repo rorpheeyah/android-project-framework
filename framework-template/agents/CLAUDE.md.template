@@ -1,0 +1,121 @@
+# CLAUDE.md
+
+> **Drop this file at the root of your new Compass-framework Android project.** Replace every `<placeholder>` with your project's value. Remove this blockquote once filled in.
+
+This file provides guidance to Claude Code and other AI coding agents when working in this repository.
+
+---
+
+## Project Identity
+
+| Field | Value |
+|---|---|
+| Project name | `<your-project>` |
+| Brand prefix | `<your-org-prefix>` (e.g., `Acme` → `AcmeApplication`, `AcmeButton`) |
+| Package root | `<your-org-domain>` (e.g., `com.acme`) |
+| Application id | `<your-org-domain>.<app-slug>` (e.g., `com.acme.customer`) |
+| Business domain | `<your-domain>` (e.g., lending, insurance, brokerage, expense, marketplace) |
+| Region(s) shipped | `<region>` (e.g., `cambodia`, `vietnam`, `korea`) — comma-separate if multi-region |
+| Tenant(s) shipped | `<region>:<tenant-slug>` (e.g., `cambodia:nh`, `cambodia:partner-a`) — list all live composite ids |
+| `:aos-sdk` pinned version | `v<x.y.z>` (the git tag this project pulls) |
+| MG URL — production | `https://mg.<your-host>/` |
+| MG URL — staging | `https://mg.staging.<your-host>/` |
+| App Link host | `https://app.<your-host>` |
+
+---
+
+## How to Work In This Repo (Agent Rules)
+
+**This project follows the Compass Framework.** The full agent rule set lives in [`framework-rules/RULES.md`](framework-rules/RULES.md). Read it before making any non-trivial change.
+
+The rules in summary — these are **non-negotiable**:
+
+1. **No `if (tenant.id == ...)` or `when (tenant.id)` outside `:app/di/TenantResolverModule.kt`.** Use `TenantFlags` / `TenantParams` for values, polymorphic `@TenantKey`-bound policies for behavior.
+2. **`:features` is Logic-Blind.** ViewModels depend on `:core` interfaces only. Onboarding a new tenant must require zero `:features` edits.
+3. **`:aos-sdk` is banking-agnostic.** No domain terms (no `Account`, `Money`, `Loan`, `Transfer`, no tenant id) inside the SDK.
+4. **One Retrofit family in `:data`** (`Fintech*Api`, split per feature area). No per-tenant Retrofit interface, no per-tenant DTO.
+5. **Tenant modules are policies + DI only.** No UI, no networking. Tenant-locked features with their own API/screens go in `:features-{name}` sibling modules.
+6. **`:design-system` is tenant-agnostic and domain-agnostic.** Theme + primitive Composables only. Strings live in `strings.xml`.
+7. **The tenant binds once at login.** No live tenant swap. Tenant change = logout + login.
+8. **Only `BuildConfig.MG_URL` and `BuildConfig.STALE_CONFIG_TTL_MS` are hardcoded.** Everything else comes from `RuntimeConfig` via MG.
+9. **Onboarding a new tenant is strictly additive.** New module + one `settings.gradle.kts` include + one `TenantCatalogue` entry. If a tenant-onboarding diff touches `:aos-sdk`, `:core`, `:data`, `:design-system`, `:features`, sibling tenants, or other region bases — push back.
+10. **No `variant` terminology.** The variant axis was collapsed into the tenant axis. Use `tenant`, `region`, `TenantContext`, `:tenants:{region}:{tenantSlug}` instead.
+
+For the full taxonomy of legal/illegal patterns, see [`framework-rules/RULES.md`](framework-rules/RULES.md) sections 3–7 and 10.
+
+---
+
+## Module Map
+
+```
+:aos-sdk             infrastructure (git submodule, pinned to v<x.y.z>)
+:core                contracts (TenantContext, Session, Repository interfaces, Policy interfaces, MVI base)
+:design-system       theme + <YourOrgPrefix>* primitives
+:data                Fintech*Api family + repository implementations
+:features            Logic-Blind UI (packages: auth/, dashboard/, <your-feature>/)
+:features-<name>     heavy-SDK or tenant-locked features (if any — chatbot, kyc, support-chat, branch-locator)
+:tenants:<region>:base       regional baseline policies (currency, calendar, OTP channel)
+:tenants:<region>:default    sentinel tenant for tests
+:tenants:<region>:<slug>     concrete tenant — TenantContext factory + @TenantKey bindings
+:app                 orchestrator: Application, BootCoordinator, LoggedInComponent, TenantResolverModule
+```
+
+Forbidden import edges and the full DAG are in [`framework-rules/RULES.md`](framework-rules/RULES.md) §3.
+
+---
+
+## Common Commands
+
+> Replace once your build is wired:
+
+```bash
+./gradlew :app:assembleDebug         # build the app
+./gradlew :app:installDebug          # build + install to connected device
+./gradlew test                       # all unit tests
+./gradlew :core:test                 # tests in :core only
+./gradlew connectedCheck             # instrumentation tests on a device
+./gradlew lint                       # Android lint
+./gradlew detekt                     # Detekt static analysis (if configured)
+./gradlew :aos-sdk:apiCheck          # binary compat check on the SDK boundary
+```
+
+---
+
+## When To Ask Before Acting
+
+Reversible changes (new file in `:features`, new package, new policy impl in a tenant module, new DTO) — **proceed**.
+
+Irreversible-ish changes — **ask first**:
+
+- Any edit to `:aos-sdk` (consumed by other products via git tag).
+- Any change to a `:core` public type's shape (`TenantContext` family, `Session`, `*Repository` interface signatures).
+- Adding a new Gradle module (especially `:features-{name}` or a new region).
+- Adding a new entry to `TenantCatalogue` or onboarding a new tenant.
+- Anything that would change `MG_URL`, `STALE_CONFIG_TTL_MS`, or the boot pipeline.
+
+For UI work, type-check + tests verify code correctness, not feature correctness. If you cannot run the app yourself, say so explicitly rather than claiming a UI feature works.
+
+---
+
+## Bootstrapping This Project From Scratch
+
+If this repo is empty, use the **`compass-init` agent** (defined in `.claude/agents/compass-init.md`). Run `/agents` in Claude Code, select `compass-init`, and the agent will walk you through Phase 0 (decisions) through Phase 3 (dashboard hello-world) of the new-project init checklist.
+
+The init checklist itself: [`framework-template/03-new-project-init-checklist.md`](../android-project-framework/framework-template/03-new-project-init-checklist.md) (in the framework repo).
+
+---
+
+## Cross-References
+
+- Framework spec: the upstream framework repo's `docs/` folder (`https://github.com/<your-org>/android-project-framework/tree/main/docs`).
+- Agent rules: [`framework-rules/RULES.md`](framework-rules/RULES.md) (sync this file from the framework repo when bumping `:aos-sdk`).
+- Init checklist: [`framework-template/03-new-project-init-checklist.md`](https://github.com/<your-org>/android-project-framework/blob/main/framework-template/03-new-project-init-checklist.md).
+- Naming conventions: [`framework-template/04-naming-decisions.md`](https://github.com/<your-org>/android-project-framework/blob/main/framework-template/04-naming-decisions.md).
+
+---
+
+## Project-Specific Notes
+
+> Add anything specific to this project that doesn't belong in the framework spec — feature-specific contexts, business decisions, scratch space for ongoing work, on-call links, key Slack channels, dashboards, etc. Keep this section short; rotate stale entries out as work moves on.
+
+- _(empty)_
