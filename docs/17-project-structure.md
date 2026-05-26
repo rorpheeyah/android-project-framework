@@ -8,14 +8,25 @@
 
 ```
 compass/
-├── aos-core/                       (Git submodule)
+├── aos-sdk/                                (Git submodule, pinned to a git-tag release)
 ├── core/
 ├── design-system/
 ├── data/
 ├── features/
 ├── features-chatbot/
-├── features-{variant-feature}/     (zero or more, e.g. features-bakong-disputes)
-├── variants-{id}/                  (one per region/company: variants-kh, variants-vn, ...)
+├── features-kyc/                           (heavy-SDK sibling: CameraX + ML Kit)
+├── features-support-chat/                  (heavy-SDK sibling: Sendbird)
+├── features-branch-locator/                (heavy-SDK sibling: Google Maps Compose)
+├── features-{tenant-feature}/              (zero or more, e.g. features-bakong-disputes)
+├── tenants/
+│   ├── cambodia/
+│   │   ├── base/                           (region baseline)
+│   │   ├── default/                        (sentinel tenant: tests + no-overrides baseline)
+│   │   └── nh/                             (concrete tenant)
+│   └── korea/                              (illustrative: if/when KR ships)
+│       ├── base/
+│       ├── default/
+│       └── nh/
 ├── app/
 ├── docs/
 ├── settings.gradle.kts
@@ -25,37 +36,70 @@ compass/
 
 ---
 
-## `:aos-core`
+## `:aos-sdk`
 
 ```
-aos-core/
+aos-sdk/
 ├── build.gradle.kts
-└── src/main/kotlin/com/aos/core/
+├── CHANGELOG.md                            (semver release history, one entry per git tag)
+└── src/main/kotlin/com/aos/sdk/
     ├── network/
     │   ├── HttpClient.kt
     │   ├── BaseApiResponse.kt
     │   ├── BaseUrlInterceptor.kt
     │   ├── BaseUrlProvider.kt
     │   ├── AuthHeaderInterceptor.kt
+    │   ├── Authenticator.kt                (OkHttp refresh-token rotation on 401)
     │   └── RetrofitFactory.kt
     ├── security/
     │   ├── SecurityProvider.kt
     │   ├── BiometricAuthenticator.kt
     │   ├── EncryptionUtils.kt
-    │   └── KeystoreManager.kt
+    │   ├── KeystoreManager.kt
+    │   └── ScreenSecurity.kt               (FLAG_SECURE helper)
     ├── storage/
     │   ├── EncryptedPrefs.kt
-    │   └── SecureFileStore.kt
+    │   ├── SecureFileStore.kt
+    │   └── EncryptedDatabase.kt            (Room + SQLCipher wrapper)
     ├── logging/
     │   ├── Logger.kt
     │   └── CrashlyticsTree.kt
-    └── firebase/
-        ├── AnalyticsClient.kt
-        ├── RemoteConfigClient.kt
-        └── MessagingService.kt
+    ├── analytics/
+    │   └── AnalyticsClient.kt
+    ├── firebase/
+    │   ├── RemoteConfigClient.kt
+    │   ├── MessagingService.kt
+    │   └── NotificationChannelRegistry.kt  (reminder / transaction / announcement)
+    ├── webview/
+    │   ├── CompassWebView.kt
+    │   ├── WebActionBridge.kt
+    │   └── CookieSync.kt
+    ├── work/
+    │   └── BackgroundWorkScheduler.kt      (WorkManager helpers)
+    ├── permissions/
+    │   └── PermissionRequester.kt
+    ├── deeplink/
+    │   └── DeepLinkResolver.kt
+    ├── i18n/
+    │   ├── LocaleManager.kt                (KR/EN/KH runtime switching)
+    │   └── FontFallback.kt                 (Noto Sans Khmer + Noto Sans KR)
+    ├── camera/
+    │   ├── CameraXController.kt
+    │   └── CompassCameraView.kt            (Compose preview primitive)
+    ├── ml/
+    │   ├── DocumentScannerWrapper.kt       (ML Kit Document Scanner)
+    │   └── FaceDetectorWrapper.kt          (ML Kit Face Detection)
+    ├── imaging/
+    │   ├── ImageCompressor.kt
+    │   ├── ExifStripper.kt
+    │   ├── Watermarker.kt
+    │   └── BitmapRedactor.kt
+    └── pdf/
+        ├── PdfDownloader.kt
+        └── PdfViewer.kt
 ```
 
-Detail: [02 — `:aos-core`](02-aos-core.md)
+Detail: [02 — `:aos-sdk`](02-aos-core.md)
 
 ---
 
@@ -65,9 +109,12 @@ Detail: [02 — `:aos-core`](02-aos-core.md)
 core/
 ├── build.gradle.kts
 └── src/main/kotlin/com/<org>/core/
-    ├── variant/
-    │   ├── VariantContext.kt
-    │   └── VariantId.kt
+    ├── tenant/
+    │   ├── TenantContext.kt
+    │   ├── TenantId.kt                     (composite "<region>:<tenantSlug>")
+    │   ├── TenantFlags.kt
+    │   ├── TenantParams.kt
+    │   └── TenantCapabilities.kt
     ├── runtime/
     │   ├── RuntimeConfig.kt
     │   ├── ApiUrls.kt
@@ -78,28 +125,48 @@ core/
     │   ├── DepartmentAccount.kt
     │   └── AccountId.kt
     ├── repository/
-    │   ├── TransferRepository.kt
+    │   ├── LoanRepository.kt
+    │   ├── LoanApplicationRepository.kt
+    │   ├── RepaymentRepository.kt
+    │   ├── GuarantorRepository.kt
+    │   ├── KycRepository.kt
     │   ├── AuthRepository.kt
-    │   └── AccountRepository.kt
+    │   ├── ChatRepository.kt               (provider-agnostic; Sendbird impl in :data)
+    │   ├── ReferralRepository.kt
+    │   ├── ConsultationRepository.kt
+    │   └── BranchRepository.kt
     ├── policy/
-    │   ├── TransferAmountPolicy.kt
-    │   ├── FeeCalculator.kt
+    │   ├── LoanEligibilityPolicy.kt
+    │   ├── EmiCalculator.kt
+    │   ├── RepaymentPenaltyCalculator.kt
     │   ├── AmountFormatter.kt
-    │   ├── VariantCapabilities.kt
-    │   ├── BeneficiaryValidator.kt
     │   ├── OtpDeliveryPolicy.kt
     │   ├── SupportContacts.kt
     │   ├── ComplianceThresholds.kt
     │   ├── BusinessCalendar.kt
-    │   └── ReceiptRenderer.kt
+    │   ├── KycRequirementPolicy.kt
+    │   ├── StaffIdValidator.kt
+    │   └── SessionTimeoutPolicy.kt
+    ├── kyc/
+    │   ├── KycCaptureRequest.kt
+    │   └── KycCaptureResult.kt
+    ├── wizard/
+    │   ├── WizardState.kt
+    │   ├── WizardEvent.kt
+    │   └── WizardEffect.kt
+    ├── deeplink/
+    │   └── DeepLinkRoute.kt
     ├── model/
     │   ├── Money.kt
     │   ├── Currency.kt
     │   ├── UserSession.kt
     │   ├── LoginResponse.kt
-    │   ├── Beneficiary.kt
-    │   ├── TransferIntent.kt
-    │   ├── TransferReceipt.kt
+    │   ├── Loan.kt
+    │   ├── LoanProduct.kt
+    │   ├── LoanApplication.kt
+    │   ├── RepaymentSchedule.kt
+    │   ├── Installment.kt
+    │   ├── Guarantor.kt
     │   └── AccountBalance.kt
     ├── mvi/
     │   ├── UiState.kt
@@ -108,7 +175,7 @@ core/
     │   └── MviViewModel.kt
     └── scope/
         ├── LoggedInScoped.kt
-        └── VariantKey.kt           # @MapKey for variant multibindings
+        └── TenantKey.kt                    (@MapKey for tenant multibindings)
 ```
 
 Detail: [03 — `:core`](03-core.md)
@@ -134,19 +201,26 @@ design-system/
     │   │   └── CompassSecondaryButton.kt
     │   ├── input/
     │   │   ├── CompassTextField.kt
-    │   │   └── CompassPasswordField.kt
+    │   │   ├── CompassPasswordField.kt
+    │   │   ├── CompassPinInput.kt
+    │   │   └── CompassPinDots.kt
     │   ├── feedback/
     │   │   ├── CompassSnackbar.kt
     │   │   └── CompassDialog.kt
     │   ├── layout/
     │   │   ├── CompassCard.kt
     │   │   └── CompassBottomSheet.kt
+    │   ├── i18n/
+    │   │   └── LocaleSelector.kt
     │   └── icons/
     │       └── CompassIcons.kt
     └── modifiers/
         ├── DebouncedClickable.kt
-        └── HapticTouchable.kt
+        ├── HapticTouchable.kt
+        └── SecureScreen.kt                  (FLAG_SECURE for PII screens)
 ```
+
+User-facing text in this module reads from `strings.xml` localized resources (`values/`, `values-ko/`, `values-km/`); no hardcoded language strings.
 
 Detail: [04 — `:design-system`](04-design-system.md)
 
@@ -159,33 +233,39 @@ data/
 ├── build.gradle.kts
 └── src/main/kotlin/com/<org>/data/
     ├── api/
-    │   ├── FintechAuthApi.kt          # /v1/auth/...
-    │   ├── FintechTransferApi.kt      # /v1/transfer/...
-    │   ├── FintechAccountApi.kt       # /v1/accounts/...
-    │   ├── FintechCardApi.kt          # /v1/cards/...
+    │   ├── FintechAuthApi.kt               # /v1/auth/...
+    │   ├── FintechLoanApi.kt               # /v1/loans/...
+    │   ├── FintechRepaymentApi.kt          # /v1/repayments/...
+    │   ├── FintechGuarantorApi.kt          # /v1/guarantors/...
+    │   ├── FintechKycApi.kt                # /v1/kyc/...
+    │   ├── FintechReferralApi.kt           # /v1/referrals/...
+    │   ├── FintechConsultationApi.kt       # /v1/consultations/...
+    │   ├── FintechBranchApi.kt             # /v1/branches/...
     │   └── dto/
     │       ├── auth/
-    │       │   ├── LoginRequest.kt
-    │       │   ├── LoginResponse.kt
-    │       │   └── OtpHandleDto.kt
-    │       ├── transfer/
-    │       │   ├── TransferRequest.kt
-    │       │   ├── TransferResponse.kt
-    │       │   └── FeeQuoteDto.kt
-    │       ├── account/
-    │       │   ├── AccountBalanceDto.kt
-    │       │   └── TransactionPageDto.kt
+    │       ├── loan/
+    │       ├── repayment/
+    │       ├── guarantor/
+    │       ├── kyc/
     │       └── shared/
-    │           └── EmptyResponse.kt
+    ├── chat/
+    │   └── SendbirdChatRepo.kt             # implements ChatRepository (provider-bound)
+    ├── external/
+    │   ├── CbcApi.kt                       # Credit Bureau Cambodia (third-party)
+    │   ├── BankStatementAnalyzerApi.kt
+    │   └── MwlAgencyApi.kt
     ├── repo/
-    │   ├── FintechAuthRepo.kt         # implements AuthRepository
-    │   ├── FintechTransferRepo.kt     # implements TransferRepository
-    │   ├── FintechAccountRepo.kt      # implements AccountRepository
-    │   ├── FintechCardRepo.kt         # implements CardRepository
+    │   ├── LoanRepo.kt                     # implements LoanRepository
+    │   ├── LoanApplicationRepo.kt
+    │   ├── RepaymentRepo.kt
+    │   ├── GuarantorRepo.kt
+    │   ├── KycRepo.kt
+    │   ├── AuthRepo.kt
+    │   ├── ReferralRepo.kt
+    │   ├── ConsultationRepo.kt
+    │   ├── BranchRepo.kt
     │   └── mapping/
-    │       ├── AuthMapping.kt
-    │       ├── TransferMapping.kt
-    │       └── AccountMapping.kt
+    │       └── (DTO ↔ domain mappers)
     └── di/
         └── DataModule.kt
 ```
@@ -208,28 +288,34 @@ features/
     │   └── ForceUpdateGate.kt
     ├── auth/
     │   ├── login/
-    │   │   ├── LoginScreen.kt
-    │   │   ├── LoginViewModel.kt
-    │   │   └── LoginContract.kt
+    │   ├── pin/
     │   ├── otp/
-    │   │   ├── OtpScreen.kt
-    │   │   ├── OtpViewModel.kt
-    │   │   └── OtpContract.kt
+    │   ├── biometric/
     │   └── AuthNavigator.kt
-    ├── transfer/
-    │   ├── input/
-    │   ├── review/
-    │   ├── result/
-    │   ├── TransferFlowState.kt
-    │   └── TransferNavigator.kt
-    └── account/
-        ├── balance/
-        ├── history/
-        ├── switcher/
-        └── AccountNavigator.kt
+    ├── dashboard/
+    │   ├── DashboardScreen.kt
+    │   ├── DashboardViewModel.kt
+    │   └── DashboardContract.kt
+    ├── loan/
+    │   ├── product-list/
+    │   ├── product-detail/
+    │   ├── apply-non-mwl/                   (multi-step wizard package)
+    │   ├── apply-mwl/                       (multi-step wizard package)
+    │   ├── my-loan/
+    │   ├── repayment/
+    │   ├── payoff/
+    │   ├── calculator/
+    │   └── LoanNavigator.kt
+    ├── consultation/
+    ├── referral/
+    ├── notification/
+    ├── profile/
+    ├── settings/
+    ├── faq/
+    └── about/
 ```
 
-Theme and components live in `:design-system`, not in a `common/` package here.
+Heavy-SDK flows (KYC capture, support chat, branch locator with Maps) live in sibling `:features-{name}` modules, not in `:features`. See below.
 
 Detail: [06 — `:features`](06-features.md)
 
@@ -250,7 +336,62 @@ features-chatbot/
 
 ---
 
-## `:features-{variant-feature}` (e.g. `:features-bakong-disputes`)
+## `:features-kyc` (sibling — CameraX + ML Kit)
+
+```
+features-kyc/
+├── build.gradle.kts
+└── src/main/kotlin/com/<org>/features/kyc/
+    ├── ui/
+    │   ├── KycFlowScreen.kt
+    │   ├── IdCardCaptureScreen.kt
+    │   ├── SelfieScreen.kt
+    │   └── ReviewScreen.kt
+    ├── upload/
+    │   └── KycUploadWorker.kt              (WorkManager)
+    └── contract/
+        ├── KycFlowState.kt
+        ├── KycFlowEvent.kt
+        └── KycFlowEffect.kt
+```
+
+Uses `:aos-sdk/camera/`, `:aos-sdk/ml/`, `:aos-sdk/imaging/`. Calls `KycRepository` from `:core`.
+
+---
+
+## `:features-support-chat` (sibling — Sendbird)
+
+```
+features-support-chat/
+├── build.gradle.kts
+└── src/main/kotlin/com/<org>/features/supportchat/
+    ├── (Sendbird SDK imported here)
+    ├── ThreadListScreen.kt
+    ├── ChatRoomScreen.kt
+    ├── ChatViewModel.kt
+    └── ChatContract.kt
+```
+
+Sendbird app id comes from `RuntimeConfig` (MG-sourced), not BuildConfig.
+
+---
+
+## `:features-branch-locator` (sibling — Google Maps)
+
+```
+features-branch-locator/
+├── build.gradle.kts
+└── src/main/kotlin/com/<org>/features/branchlocator/
+    ├── (maps-compose imported here)
+    ├── BranchMapScreen.kt
+    ├── BranchListScreen.kt
+    ├── BranchViewModel.kt
+    └── BranchContract.kt
+```
+
+---
+
+## `:features-{tenant-feature}` (e.g. `:features-bakong-disputes`)
 
 ```
 features-bakong-disputes/
@@ -259,8 +400,6 @@ features-bakong-disputes/
     ├── api/
     │   ├── BakongDisputeApi.kt
     │   └── dto/
-    │       ├── DisputeRequest.kt
-    │       └── DisputeResponse.kt
     ├── repo/
     │   └── BakongDisputeRepo.kt
     ├── screen/
@@ -271,35 +410,68 @@ features-bakong-disputes/
         └── BakongDisputesModule.kt
 ```
 
-Detail: [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md)
+Detail: [07 — `:tenants:*` § "When the Tenant Has Unique Features"](07-variants.md)
 
 ---
 
-## `:variants-{id}` (e.g. `:variants-kh`)
+## `:tenants:{region}:base` (e.g. `:tenants:cambodia:base`)
 
 ```
-variants-kh/
+tenants/cambodia/base/
 ├── build.gradle.kts
-└── src/main/kotlin/com/<org>/variants/kh/
+└── src/main/kotlin/com/<org>/tenants/cambodia/base/
     ├── policy/
-    │   ├── KhTransferAmountPolicy.kt
-    │   ├── KhFeeCalculator.kt
-    │   ├── KhBeneficiaryValidator.kt
+    │   ├── KhDefaultLoanEligibilityPolicy.kt
+    │   ├── KhDefaultEmiCalculator.kt
+    │   ├── KhDefaultRepaymentPenaltyCalculator.kt
     │   ├── KhOtpDeliveryPolicy.kt
     │   ├── KhComplianceThresholds.kt
     │   ├── KhBusinessCalendar.kt
-    │   └── KhReceiptRenderer.kt
+    │   └── KhDefaultKycRequirementPolicy.kt
     ├── format/
-    │   └── KhrAmountFormatter.kt
-    ├── capability/
-    │   └── KhCapabilities.kt
-    ├── support/
-    │   └── KhSupportContacts.kt
-    └── di/
-        └── KhVariantModule.kt
+    │   ├── KhrAmountFormatter.kt
+    │   └── UsdAmountFormatter.kt           (dual-currency for KH)
+    └── capability/
+        └── KhBaseCapabilities.kt
 ```
 
-Detail: [07 — `:variants-*`](07-variants.md)
+No Hilt module here — provides implementation classes only. Concrete tenants bind them via `@TenantKey`.
+
+---
+
+## `:tenants:{region}:default` (e.g. `:tenants:cambodia:default`)
+
+```
+tenants/cambodia/default/
+├── build.gradle.kts
+└── src/main/kotlin/com/<org>/tenants/cambodia/default/
+    └── di/
+        └── KhDefaultTenantModule.kt        (@TenantKey("cambodia:default") bindings, all reusing :base classes)
+```
+
+Sentinel tenant. Used in tests and as the no-overrides baseline. Never resolves in production.
+
+---
+
+## `:tenants:{region}:{tenantSlug}` (e.g. `:tenants:cambodia:nh`)
+
+```
+tenants/cambodia/nh/
+├── build.gradle.kts                        (depends on :tenants:cambodia:base — MANDATORY)
+└── src/main/kotlin/com/<org>/tenants/cambodia/nh/
+    ├── flags/
+    │   └── NhKhTenantProfile.kt            (TenantContext factory)
+    ├── policy/
+    │   └── NhKhStaffIdValidator.kt         (tenant-specific override)
+    ├── support/
+    │   └── NhKhSupportContacts.kt
+    ├── capability/
+    │   └── NhKhCapabilities.kt
+    └── di/
+        └── NhKhTenantModule.kt             (@TenantKey("cambodia:nh") bindings — concrete-rebinds-everything)
+```
+
+Detail: [07 — `:tenants:*`](07-variants.md)
 
 ---
 
@@ -309,6 +481,10 @@ Detail: [07 — `:variants-*`](07-variants.md)
 app/
 ├── build.gradle.kts
 ├── src/main/AndroidManifest.xml
+├── src/main/res/xml/locales_config.xml     (KR / EN / KH per-app locale registry)
+├── src/main/res/values/strings.xml         (EN — default)
+├── src/main/res/values-ko/strings.xml
+├── src/main/res/values-km/strings.xml
 ├── src/main/kotlin/com/<org>/app/
 │   ├── CompassApplication.kt
 │   ├── MainActivity.kt
@@ -316,23 +492,25 @@ app/
 │   ├── boot/
 │   │   ├── BootCoordinator.kt
 │   │   ├── MgClient.kt
-│   │   └── BootResult.kt
+│   │   ├── BootResult.kt
+│   │   └── StaleConfigFallback.kt          (24h last-known-good cache)
 │   ├── di/
 │   │   ├── NetworkModule.kt
 │   │   ├── LoggedInComponent.kt
 │   │   ├── LoggedInEntryPoint.kt
 │   │   ├── LoggedInBindingsModule.kt
-│   │   ├── VariantResolverModule.kt   # picks active variant's policy from the multibindings map
+│   │   ├── TenantResolverModule.kt         # picks active tenant's policy from the multibindings map
 │   │   ├── RuntimeConfigModule.kt
 │   │   └── FirebaseModule.kt
 │   ├── session/
 │   │   ├── SessionFactory.kt
 │   │   ├── AccountIdInterceptor.kt
+│   │   ├── InactivityDetector.kt           (session timeout)
 │   │   ├── LoggedInComponentManager.kt
 │   │   └── LogoutHandler.kt
-│   └── variant/
-│       ├── VariantCatalogue.kt
-│       └── VariantContextResolver.kt
+│   └── tenant/
+│       ├── TenantCatalogue.kt              (TenantId → TenantProfile factory)
+│       └── TenantContextResolver.kt        (resolves TenantContext from LoginResponse)
 └── src/debug/kotlin/com/<org>/app/debug/
     ├── EnvironmentOverride.kt
     └── DebugOverlay.kt
@@ -347,17 +525,28 @@ Detail: [08 — `:app`](08-app-orchestrator.md)
 ```kotlin
 rootProject.name = "compass"
 
-include(":aos-core")
+include(":aos-sdk")
 include(":core")
 include(":design-system")
 include(":data")
 include(":features")
 include(":features-chatbot")
-include(":variants-kh")
-include(":variants-vn")
-include(":variants-ppcbank")
+include(":features-kyc")
+include(":features-support-chat")
+include(":features-branch-locator")
+// :features-{tenant-feature} modules — added as tenant-locked features ship
+
+include(":tenants:cambodia:base")
+include(":tenants:cambodia:default")
+include(":tenants:cambodia:nh")
+// Additional concrete tenants under :tenants:cambodia:* — added per organization
+
+// :tenants:korea:* modules — added if/when Korea ships
+// include(":tenants:korea:base")
+// include(":tenants:korea:default")
+// include(":tenants:korea:nh")
+
 include(":app")
-// Add additional :variants-{id} and :features-{variant-feature} modules here as the project grows.
 ```
 
 ---
@@ -365,5 +554,6 @@ include(":app")
 ## Cross-references
 
 - Why this shape: [01 — Module Topology](01-module-topology.md)
-- Onboarding a new variant uses this layout: [13 — Onboarding a Variant](13-onboarding-a-variant.md)
+- Onboarding a new tenant or region uses this layout: [13 — Onboarding a Tenant](13-onboarding-a-variant.md)
 - Build perf consequences: [14 — Build Performance](14-build-performance.md)
+- Tenant behavioral model: [19 — Tenants and Regions](19-tenants-and-variants.md)

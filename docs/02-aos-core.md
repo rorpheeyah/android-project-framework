@@ -1,16 +1,18 @@
-# 02 · `:aos-core` — Infrastructure Layer
+# 02 · `:aos-sdk` — Infrastructure Layer
 
-> **Type:** Git submodule · Android library
+> **Type:** Git submodule · Android library · git-tag-released
 > **Stability:** High · independent of banking business rules
-> **Reuse target:** Multiple projects share this module verbatim
+> **Reuse target:** Multiple separate Android products consume this module via pinned git tag
+>
+> **Historical note:** this module was renamed from `:aos-core` to `:aos-sdk` to reflect its multi-product consumption model. The git submodule path may still be `aos-core/` on disk; the Gradle module name is `:aos-sdk`.
 
 ---
 
 ## 1. Purpose
 
-`:aos-core` is the project-agnostic plumbing layer. Anything a serious Android app needs that is **not specific to banking** lives here. It is a Git submodule so that bug fixes and security patches propagate to all dependent projects without per-project rework.
+`:aos-sdk` is the project-agnostic plumbing layer. Anything a serious Android app needs that is **not specific to banking** lives here. It is a Git submodule so that bug fixes and security patches propagate to all dependent projects without per-project rework.
 
-If you find yourself writing something that mentions `Account`, `Money`, `Variant`, `Department`, `KHQR`, or any banking term — **it does not belong in `:aos-core`**.
+If you find yourself writing something that mentions `Account`, `Money`, `Tenant`, `Department`, `Loan`, `KHQR`, or any banking term — **it does not belong in `:aos-sdk`**.
 
 ---
 
@@ -27,7 +29,7 @@ If you find yourself writing something that mentions `Account`, `Money`, `Varian
 | `RetrofitFactory` | Builds `Retrofit` instances with Moshi converters; consumed by `:data` |
 
 ```kotlin
-// :aos-core/network/AuthHeaderInterceptor.kt
+// :aos-sdk/network/AuthHeaderInterceptor.kt
 internal class AuthHeaderInterceptor @Inject constructor(
     private val encryptedPrefs: EncryptedPrefs,
 ) : Interceptor {
@@ -83,12 +85,12 @@ Thin wrappers around Firebase SDKs so that consumers don't need direct Firebase 
 
 ---
 
-## 3. What `:aos-core` Must Never Contain
+## 3. What `:aos-sdk` Must Never Contain
 
-- **Banking terms:** `Account`, `Money`, `Transfer`, `Beneficiary`, `KHQR`
+- **Banking terms:** `Account`, `Money`, `Loan`, `Repayment`, `Guarantor`, `KHQR`
 - **Variant identifiers:** `KH`, `VN`, `PPCBank`, etc.
 - **Repository interfaces or implementations** — those live in `:core` (interfaces) or `:data` (impls)
-- **Compose UI** — `:aos-core` is a non-UI library
+- **Compose UI** — `:aos-sdk` is a non-UI library
 - **Hilt modules** — DI assembly is the orchestrator's job, not infrastructure's
 
 If a class is unsure, the test is: *"Could a non-banking project use this class verbatim?"* If the answer is no, it doesn't belong here.
@@ -111,7 +113,7 @@ projects/
 
 ### 4.2 Versioning
 
-`:aos-core` uses **Git tags as versions** (e.g., `v2.4.1`). The Compass repo pins a specific commit; upgrades are explicit:
+`:aos-sdk` uses **Git tags as versions** (e.g., `v2.4.1`). The Compass repo pins a specific commit; upgrades are explicit:
 
 ```bash
 git submodule update --remote aos-core
@@ -123,7 +125,7 @@ This makes infrastructure upgrades reviewable artifacts, not silent dependency c
 
 ### 4.3 Stability mandate
 
-Breaking API changes in `:aos-core` are **rare** and require a major version bump. Consumers (Compass included) opt into the upgrade. This is the entire reason `:aos-core` is a submodule rather than a Maven dependency — the team needs source-level visibility into infrastructure when debugging production incidents.
+Breaking API changes in `:aos-sdk` are **rare** and require a major version bump. Consumers (Compass included) opt into the upgrade. This is the entire reason `:aos-sdk` is a submodule rather than a Maven dependency — the team needs source-level visibility into infrastructure when debugging production incidents.
 
 ---
 
@@ -145,6 +147,6 @@ Implementation classes are `internal`. Consumers wire these via Hilt in `:app/di
 
 ## 6. Cross-references
 
-- Where the orchestrator wires `:aos-core` into the data layer: [08 — `:app`](08-app-orchestrator.md)
+- Where the orchestrator wires `:aos-sdk` into the data layer: [08 — `:app`](08-app-orchestrator.md)
 - How `BaseUrlInterceptor` participates in MG-driven URL switching: [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
 - The data layer that consumes `RetrofitFactory`: [05 — `:data`](05-data.md)

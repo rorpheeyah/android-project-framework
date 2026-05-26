@@ -8,7 +8,7 @@
 
 Three rules govern every WebView in the project:
 
-1. **WebView code is infrastructure, not UI logic.** Primitives live in `:aos-core/webview/`. The actual webview-backed screens live in `:features-{name}` sibling modules (mirroring `:features-chatbot`), **never** in `:features` itself.
+1. **WebView code is infrastructure, not UI logic.** Primitives live in `:aos-sdk/webview/`. The actual webview-backed screens live in `:features-{name}` sibling modules (mirroring `:features-chatbot`), **never** in `:features` itself.
 2. **The JS bridge is a typed contract** — one method name, one versioned payload shape. Not a grab-bag of `iWebAction` / `iWebActionBA` / `iwebaction` near-duplicates.
 3. **Every URL the WebView may load comes from `RuntimeConfig`** (or a `:core` policy when per-variant). No hardcoded `loadUrl("https://…")` in any screen.
 
@@ -30,7 +30,7 @@ A WebView screen is **legitimate**. A WebView screen that posts results back int
 ## 3. Module Placement
 
 ```
-                       :aos-core/webview/                  banking-agnostic primitives
+                       :aos-sdk/webview/                  banking-agnostic primitives
                        ├── CompassWebView.kt                Composable: cookie sync,
                        ├── WebActionBridge.kt               default chrome client,
                        └── CookieSync.kt                    one-method JS bridge
@@ -39,16 +39,16 @@ A WebView screen is **legitimate**. A WebView screen that posts results back int
                 │                                           │
         :core/policy/                              :design-system/
         WebActionPolicy + WebAction types          CompassWebViewFrame
-        (variant action-code map)                  (themed loading/error overlay)
+        (tenant action-code map)                   (themed loading/error overlay)
                 ↑                                           ↑
-        :variants-{id}/policy/                     :features-{name}/
+        :tenants:{region}:{tenantSlug}/policy/                     :features-{name}/
         KhWebActionPolicy impl                     :features-terms,
                                                    :features-online-mall,
                                                    :features-points-mall, …
                                                    (webview-backed sibling modules)
 ```
 
-A WebView-heavy feature follows the existing variant-locked feature pattern (see [07 — `:variants-*` § 9](07-variants.md)). It does **not** live inside `:features`: a webview screen with its own JS bridge has its own dependencies and SDK weight; isolating it is the same call as isolating the chatbot.
+A WebView-heavy feature follows the existing tenant-locked feature pattern (see [07 — `:tenants:*` § 9](07-variants.md)). It does **not** live inside `:features`: a webview screen with its own JS bridge has its own dependencies and SDK weight; isolating it is the same call as isolating the chatbot.
 
 ---
 
@@ -57,7 +57,7 @@ A WebView-heavy feature follows the existing variant-locked feature pattern (see
 The single most common WebView antipattern is exposing several `@JavascriptInterface` methods that all do the same thing under slightly different names. The framework forbids it.
 
 ```kotlin
-// :aos-core/webview/WebActionBridge.kt
+// :aos-sdk/webview/WebActionBridge.kt
 class WebActionBridge(
     private val scope: CoroutineScope,
     private val onAction: (WebAction) -> Unit,
@@ -105,7 +105,7 @@ internal fun TermsAgreementScreen(vm: TermsViewModel = hiltViewModel()) {
 }
 ```
 
-`CompassWebView` is the `:aos-core` Composable that wraps `android.webkit.WebView` with: `addJavascriptInterface` lifecycle, `WebSettings` hardening (no file access, no JS-to-loadURL bridge, mixed-content blocked), cookie sync (§6), URL allowlist (§5), and a `DisposableEffect`-bound `destroy()`.
+`CompassWebView` is the `:aos-sdk` Composable that wraps `android.webkit.WebView` with: `addJavascriptInterface` lifecycle, `WebSettings` hardening (no file access, no JS-to-loadURL bridge, mixed-content blocked), cookie sync (§6), URL allowlist (§5), and a `DisposableEffect`-bound `destroy()`.
 
 ---
 
@@ -151,7 +151,7 @@ Native and WebView agree on the user's session **without** exposing raw tokens t
 3. When the page is dismissed, `CookieSync.pullFrom(webview, url)` reads any cookies the page wrote back and stages them in the jar — keeping native requests in sync if the page rotated a token.
 
 ```kotlin
-// :aos-core/webview/CookieSync.kt
+// :aos-sdk/webview/CookieSync.kt
 class CookieSync(private val jar: CookieJar) {
     fun pushTo(webView: WebView, url: HttpUrl) {
         jar.loadForRequest(url).forEach { c ->
@@ -192,7 +192,7 @@ sealed interface WebActionResult {
 Variant impl:
 
 ```kotlin
-// :variants-kh/policy/KhWebActionPolicy.kt
+// :tenants:cambodia:nh/policy/KhWebActionPolicy.kt
 internal class KhWebActionPolicy : WebActionPolicy {
     private val allowed = setOf("CLOSE", "OPEN_OTP", "OPEN_KHQR_SCAN", "RECEIPT_SHARED")
 
@@ -235,7 +235,7 @@ User taps "Agree" on native screen
     TermsViewModel.initialState.url ← RuntimeConfig.webRoutes["terms.user_agreement"]
          │
          ▼
-CompassWebView (in :aos-core; framed by :design-system)
+CompassWebView (in :aos-sdk; framed by :design-system)
     addJavascriptInterface(WebActionBridge, "Compass")
     CookieSync.pushTo(webView, url)
     loadUrl(state.url)
@@ -274,7 +274,7 @@ The native UI never trusts the page enough to mutate session state directly. The
 | `@JavascriptInterface fun iWebAction(s)` + `iWebActionBA(s)` + `iwebaction(s)` | Exactly one method (`postAction`), versioned payload |
 | `mHandler = new Handler()` (no Looper) | `CoroutineScope` + `Dispatchers.Main.immediate` |
 | `if (mActivity.isFinishing()) return; … dlg.show()` | `repeatOnLifecycle(STARTED)`-bound bridge; `DisposableEffect` for cleanup |
-| `if (variantId == "kh") allow("OPEN_KHQR_SCAN")` | `WebActionPolicy` impl in `:variants-kh` |
+| `if (tenant.id == TenantId("cambodia:nh")) allow("OPEN_KHQR_SCAN")` | `WebActionPolicy` impl in `:tenants:cambodia:nh` |
 | `static WebView sShared = …` | One per screen; lifecycle-bound; never reused |
 | Bridge holds `Activity` reference | Bridge holds a callback closure over the VM only |
 | Re-entrant cookies via `Conf.ISRELEASE ? prod : test` | `BuildConfig.MG_URL` per buildType (see [11](11-mg-and-runtime-config.md) §3) |
@@ -284,7 +284,7 @@ The native UI never trusts the page enough to mutate session state directly. The
 ## 10. Cross-references
 
 - The `RuntimeConfig` contract extended here (`webRoutes`, `storeReviewMode`): [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
-- Where webview-backed feature modules sit in the DAG: [07 — `:variants-*` § 9](07-variants.md)
-- The `:aos-core` infrastructure layer hosting the WebView primitives: [02 — `:aos-core`](02-aos-core.md)
+- Where webview-backed feature modules sit in the DAG: [07 — `:tenants:*:*` § 9](07-variants.md)
+- The `:aos-sdk` infrastructure layer hosting the WebView primitives: [02 — `:aos-sdk`](02-aos-core.md)
 - The policy seam used for per-variant action codes: [03 — `:core` § 2.5](03-core.md)
 - Cookie-jar configuration in OkHttp: [05 — `:data`](05-data.md)

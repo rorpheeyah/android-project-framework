@@ -1,6 +1,8 @@
 # 12 · Departments and Session
 
-> One logged-in user, multiple accounts. Switching accounts is a session-level state change — not a variant change, not a DI rebuild.
+> One logged-in user, multiple accounts. Switching accounts is a session-level state change — not a tenant change, not a DI rebuild.
+>
+> **Note:** single-account consuming apps (this PRD's lending product) ship with `accounts.size == 1` and hide the switcher UI declaratively. The infrastructure documented below stays in place for multi-account outsource projects.
 
 ---
 
@@ -12,7 +14,11 @@ After a successful login, the server returns:
 data class LoginResponse(
     val userSession: UserSession,
     val accounts: List<DepartmentAccount>,
-    val variantId: VariantId,
+    val tenantId: TenantId,
+    val regionCode: String,
+    val defaultCurrency: Currency,
+    val tenantFlags: TenantFlags,
+    val tenantParams: TenantParams,
 )
 
 data class DepartmentAccount(
@@ -25,9 +31,9 @@ data class DepartmentAccount(
 
 The user picks (or defaults to) one of these accounts; that choice becomes `Session.activeAccountId`. Every authenticated request stamps that account ID via an OkHttp interceptor.
 
-This is **not** multi-variant:
+This is **not** multi-tenant:
 
-- All accounts belong to one logged-in user under one variant.
+- All accounts belong to one logged-in user under one tenant.
 - The same `LoggedInComponent` serves them all — no rebuild, no purge.
 - The repos in `:data` already know how to scope by account ID; they read `session.activeAccountId.value` per call.
 
@@ -39,7 +45,7 @@ This is **not** multi-variant:
 // :core/session/Session.kt
 class Session(
     val userSession: UserSession,
-    val variantContext: VariantContext,
+    val tenantContext: TenantContext,
     val accounts: List<DepartmentAccount>,
     initialActiveAccount: AccountId,
 ) {
@@ -61,11 +67,11 @@ class Session(
 // :app/session/SessionFactory.kt
 @Singleton
 class SessionFactory @Inject constructor(
-    private val variantContextResolver: VariantContextResolver,
+    private val tenantContextResolver: TenantContextResolver,
 ) {
     fun build(login: LoginResponse): Session = Session(
         userSession          = login.userSession,
-        variantContext       = variantContextResolver.resolve(login.variantId),
+        tenantContext        = tenantContextResolver.resolve(login),
         accounts             = login.accounts,
         initialActiveAccount = login.accounts.first().id,   // server may dictate; this is the fallback
     )
@@ -153,7 +159,7 @@ Switching is instantaneous from the user's perspective — there is no DI rebuil
 |---|---|
 | The `LoggedInComponent` | Stays. No rebuild. |
 | Repositories (in `:data`) | Same instances. They re-read `session.activeAccountId` per call. |
-| Variant policies | Stay. Variant doesn't change with the account. |
+| Tenant policies | Stay. Tenant doesn't change with the account. |
 | OkHttp client / cache | Stays. The interceptor stamps the new ID. |
 | ViewModels | Stay. They observe `session.activeAccountId` if relevant. |
 | EncryptedPrefs | Stay. Tokens are user-scoped, not account-scoped. |
@@ -163,11 +169,11 @@ That last point is the only foot-gun: a ViewModel that displays balance for the 
 
 ---
 
-## 6. Why Departments Are Not Sub-Variants
+## 6. Why Departments Are Not Sub-Tenants
 
-A reasonable-looking alternative is to treat each department as a sub-variant with its own DI graph. We rejected this because:
+A reasonable-looking alternative is to treat each department as a sub-tenant with its own DI graph. We rejected this because:
 
-- All accounts under a login share **the same backend**, **the same auth token**, **the same variant rules**.
+- All accounts under a login share **the same backend**, **the same auth token**, **the same tenant rules**.
 - The only request-level difference is the account ID header — a parameter, not a DI graph.
 - A nested DI structure pays a runtime-rebuild cost (component lifecycle, instance churn) for what is structurally a single value flip.
 
@@ -178,6 +184,6 @@ The principle: **scope a value, not a graph, when the only difference is a param
 ## 7. Cross-references
 
 - The repositories that read `session.activeAccountId`: [05 — `:data`](05-data.md)
-- The variant policies that may also read `Session` indirectly: [07 — `:variants-*`](07-variants.md)
+- The tenant policies that may also read `Session` indirectly: [07 — `:tenants:*`](07-variants.md)
 - The `LoggedInComponent` that holds `Session`: [10 — Boot Phases](10-boot-phases.md)
 - The `:core` types referenced here: [03 — `:core`](03-core.md)

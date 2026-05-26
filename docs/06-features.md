@@ -2,7 +2,7 @@
 
 > **Type:** Local Android library
 > **Role:** Logic-Blind Compose UI organized by package
-> **Constraint:** May import `:core`, `:design-system`, and `:aos-core`. May **never** import `:data` or `:variants-*`.
+> **Constraint:** May import `:core`, `:design-system`, and `:aos-sdk`. May **never** import `:data` or `:tenants:*:*` (any tenant or region-base module).
 
 ---
 
@@ -29,7 +29,7 @@ The textbook answer to "many features" is "one Gradle module per feature". For t
 
 The win is **build performance** + **refactoring fluidity**. The cost — and we accept it — is that **package-level discipline depends on convention** rather than the build system. Lint rules and code review enforce it.
 
-> **When to break out into a separate module:** when a feature pulls in **heavy unique dependencies** that other features should not pay for, OR when a feature is variant-locked with its own API + DTOs + screens. The chatbot is the canonical example for the first; `:features-bakong-disputes` is the canonical example for the second. See [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md).
+> **When to break out into a separate module:** when a feature pulls in **heavy unique dependencies** that other features should not pay for, OR when a feature is tenant-locked with its own API + DTOs + screens. The chatbot, KYC, support-chat, and branch-locator modules are canonical examples for the first; `:features-bakong-disputes` is the canonical example for the second. See [07 — `:tenants:*` § "When the Tenant Has Unique Features"](07-variants.md).
 
 ---
 
@@ -45,33 +45,44 @@ The win is **build performance** + **refactoring fluidity**. The cost — and we
     │   ├── MaintenanceGate.kt
     │   └── ForceUpdateGate.kt
     │
-    ├── auth/                  # Login, registration, OTP, biometric prompt
+    ├── auth/                  # Login, registration, OTP, PIN, biometric prompt
     │   ├── login/
     │   │   ├── LoginScreen.kt
     │   │   ├── LoginViewModel.kt
     │   │   └── LoginContract.kt
+    │   ├── pin/
     │   ├── otp/
+    │   ├── biometric/
     │   └── AuthNavigator.kt
     │
-    ├── transfer/              # P2P, QR, beneficiary lookup, review
-    │   ├── input/
-    │   │   ├── TransferInputScreen.kt
-    │   │   ├── TransferInputViewModel.kt
-    │   │   └── TransferInputContract.kt
-    │   ├── review/
-    │   ├── result/
-    │   ├── TransferFlowState.kt
-    │   └── TransferNavigator.kt
+    ├── dashboard/             # Multi-currency dashboard, loan summary, quick actions
+    │   ├── DashboardScreen.kt
+    │   ├── DashboardViewModel.kt
+    │   └── DashboardContract.kt
     │
-    └── account/               # Balances, history, account switcher
-        ├── balance/
-        ├── history/
+    ├── loan/                  # Product list/detail, apply (MWL & NON-MWL), my loan, repayment, calculator
+    │   ├── product-list/
+    │   ├── product-detail/
+    │   ├── apply/
+    │   │   ├── LoanApplyScreen.kt
+    │   │   ├── LoanApplyViewModel.kt
+    │   │   └── LoanApplyContract.kt
+    │   ├── my-loan/
+    │   ├── repayment/
+    │   ├── payoff/
+    │   ├── calculator/
+    │   ├── LoanFlowState.kt
+    │   └── LoanNavigator.kt
+    │
+    └── account/               # Account switcher (hidden when accounts.size == 1)
         ├── switcher/
         │   ├── AccountSwitcherSheet.kt
         │   ├── AccountSwitcherViewModel.kt
         │   └── AccountSwitcherContract.kt
         └── AccountNavigator.kt
 ```
+
+Heavy-SDK flows live in sibling modules, not in `:features` — see [01 — Module Topology § 4.5](01-module-topology.md). Concretely: `:features-kyc` (CameraX + ML Kit), `:features-support-chat` (Sendbird), `:features-branch-locator` (Google Maps Compose), `:features-chatbot` (NLP/LLM).
 
 Note the absence of a `common/` package. Theme and component primitives live in `:design-system`, depended on directly. Anything truly cross-cutting at the *feature* level (a multi-flow state holder, for example) can stay in a feature-local helper or be promoted to `:core/model/` if it carries domain meaning.
 
@@ -85,19 +96,19 @@ Note the absence of a `common/` package. Theme and component primitives live in 
 
 ## 4. Logic-Blind Constraint
 
-A `:features` ViewModel **must not know** which variant is active.
+A `:features` ViewModel **must not know** which tenant is active.
 
 | Allowed in `:features` | Not allowed in `:features` |
 |---|---|
-| `class TransferViewModel @Inject constructor(repo: TransferRepository, policy: TransferAmountPolicy)` | `class TransferViewModel @Inject constructor(repo: FintechTransferRepo)` |
-| `repo.submit(intent)` | `if (variantId == VariantId.KH) bakongFlow() else napasFlow()` |
-| Reading `VariantContext.displayName` to render a label | Reading `VariantContext.id` to dispatch logic |
-| Reading `capabilities.supportsKhqrScan()` and gating UI on the boolean | Reading `variantId` and gating UI on the string |
+| `class LoanApplyViewModel @Inject constructor(repo: LoanApplicationRepository, policy: LoanEligibilityPolicy)` | `class LoanApplyViewModel @Inject constructor(repo: LoanApplicationRepo)` |
+| `repo.submit(application)` | `if (tenant.id == TenantId("cambodia:nh")) flowA() else flowB()` |
+| Reading `TenantContext.displayName` to render a label | Reading `TenantContext.id` to dispatch logic |
+| Reading `capabilities.supportsBakongDisputes()` and gating UI on the boolean | Reading `tenant.id` and gating UI on the string |
 
 Two rules:
 
-1. **Types from `:data` and `:variants-*` cannot appear in `:features` source code.** The build graph forbids it.
-2. **The variant ID must not appear in conditional branches.** `VariantContext` may be read for **display** (currency code, bank name, market label, logo); never for **dispatch**. To gate a feature, use `VariantCapabilities` (a `:core` interface) — the variant module sets the boolean, the UI reads it.
+1. **Types from `:data` and `:tenants:*:*` cannot appear in `:features` source code.** The build graph forbids it.
+2. **The tenant ID must not appear in conditional branches.** `TenantContext` may be read for **display** (currency code, organization name, market label, logo); never for **dispatch**. To gate a feature, use `TenantCapabilities` (a `:core` interface) — the tenant module sets the boolean, the UI reads it.
 
 ---
 
@@ -107,8 +118,8 @@ Navigation lives in two layers:
 
 | Layer | Owner | Purpose |
 |---|---|---|
-| **Top-level graph** | `:app` (`AppNavigation.kt`) | Boot → Auth → Main scaffold; conditionally includes variant-locked feature graphs |
-| **Feature subgraphs** | `:features` (`AuthNavigator.kt`, `TransferNavigator.kt`, …) | Internal routing within a feature |
+| **Top-level graph** | `:app` (`AppNavigation.kt`) | Boot → Auth → Main scaffold; conditionally includes tenant-locked feature graphs |
+| **Feature subgraphs** | `:features` (`AuthNavigator.kt`, `LoanNavigator.kt`, `DashboardNavigator.kt`, …) | Internal routing within a feature |
 
 Each feature exposes a `NavGraphBuilder.<feature>NavGraph(navController, …)` extension function, called from `:app`. Feature graphs reference each other only by route strings (no cross-package imports of Composables).
 
@@ -139,7 +150,7 @@ internal fun LoginContent(state: LoginState, onEvent: (LoginEvent) -> Unit) {
 
 `:app` wraps the entire `NavHost` in `CompassTheme { … }`, so every screen renders inside the design system without each having to opt in.
 
-> **Variant branding override** is a future-roadmap concern. Branding is intentionally **not** part of MG's `RuntimeConfig` — see [11](11-mg-and-runtime-config.md). Until then, all variants share the design system.
+> **Tenant branding override** is a future-roadmap concern. Branding is intentionally **not** part of MG's `RuntimeConfig` — see [11](11-mg-and-runtime-config.md). Until then, all tenants share the design system.
 
 Detail: [04 — `:design-system`](04-design-system.md).
 
@@ -159,12 +170,12 @@ Detail: [04 — `:design-system`](04-design-system.md).
 
 | ❌ Doesn't belong | ✅ Goes in |
 |---|---|
-| `FintechTransferRepo` | `:data` |
-| `interface TransferRepository` | `:core` |
-| `OkHttpClient` setup | `:aos-core` |
+| `LoanApplicationRepo` | `:data` |
+| `interface LoanApplicationRepository` | `:core` |
+| `OkHttpClient` setup | `:aos-sdk` |
 | `CompassButton` and other UI primitives | `:design-system` |
-| Variant-specific fee tables | `:variants-{id}` |
-| `if (variantId == VariantId.PPC) { … }` | nowhere — use a policy or capability interface |
+| Tenant-specific fee tables | `:tenants:{region}:{tenantSlug}` (or `:tenants:{region}:base` if regulator-wide) |
+| `if (tenant.id == TenantId("cambodia:nh")) { … }` | nowhere — use a policy or capability interface |
 
 ---
 
@@ -173,6 +184,6 @@ Detail: [04 — `:design-system`](04-design-system.md).
 - The contracts `:features` consumes: [03 — `:core`](03-core.md)
 - The visual primitives `:features` uses: [04 — `:design-system`](04-design-system.md)
 - Where repository implementations come from: [05 — `:data`](05-data.md)
-- Where variant policies come from: [07 — `:variants-*`](07-variants.md)
+- Where tenant policies come from: [07 — `:tenants:*`](07-variants.md)
 - MVI conventions every ViewModel follows: [09 — MVI Pattern](09-mvi-pattern.md)
 - Why Hybrid-Monolith specifically: [14 — Build Performance](14-build-performance.md)

@@ -36,7 +36,7 @@
 
 - `SingletonComponent` — process-lifetime infrastructure
 - `LoggedInComponent` — built once at login, dropped at logout (no in-session swap)
-- `:data` and every `:variants-*` `@InstallIn(LoggedInComponent::class)` — auto-discovered, no central registry
+- `:data` and every `:tenants:*:*` `@InstallIn(LoggedInComponent::class)` — auto-discovered, no central registry
 
 → Detail: [10 — Boot Phases](10-boot-phases.md)
 
@@ -74,7 +74,7 @@
 **Retrofit + OkHttp** with:
 
 - **Single `FintechApi` interface** in `:data` — server demuxes per user, so no per-variant API surface
-- **Certificate pinning** — per environment configured in `:aos-core`
+- **Certificate pinning** — per environment configured in `:aos-sdk`
 - **`BaseUrlInterceptor`** — rewrites base URL at call time using `RuntimeConfig` from MG
 - **`AccountIdInterceptor`** — stamps `X-Account-Id` from `Session.activeAccountId`
 - **`AuthHeaderInterceptor`** — bearer token from `EncryptedPrefs`
@@ -88,23 +88,23 @@
 
 | Concern | Library / Mechanism |
 |---|---|
-| At-rest secrets | `EncryptedSharedPreferences` (AES-256, MasterKey) — wrapped as `EncryptedPrefs` in `:aos-core` |
+| At-rest secrets | `EncryptedSharedPreferences` (AES-256, MasterKey) — wrapped as `EncryptedPrefs` in `:aos-sdk` |
 | At-rest blobs | `EncryptedFile` — wrapped as `SecureFileStore` |
 | Biometric prompts | `androidx.biometric` |
-| Root/jailbreak detection | `SecurityProvider` in `:aos-core` (cold-start abort on failure) |
+| Root/jailbreak detection | `SecurityProvider` in `:aos-sdk` (cold-start abort on failure) |
 | Keys | Android Keystore — wrapped as `KeystoreManager` |
 
 ---
 
 ## Submodule Strategy
 
-`:aos-core` is consumed as a **Git submodule**, not a Maven dependency:
+`:aos-sdk` is consumed as a **Git submodule**, not a Maven dependency:
 
 - Pinned to a specific commit per checkout
 - Upgrades are explicit (`git submodule update --remote`)
 - Source-level visibility for production debugging
 
-→ Detail: [02 — `:aos-core`](02-aos-core.md)
+→ Detail: [02 — `:aos-sdk`](02-aos-core.md)
 
 ---
 
@@ -141,7 +141,7 @@
 | Analytics | Firebase Analytics, wrapped as `AnalyticsClient` (PII-stripping middleware) |
 | Remote feature flags | Firebase Remote Config, wrapped as `RemoteConfigClient` |
 
-All Firebase access goes through `:aos-core` wrappers — consumers never import Firebase SDKs directly.
+All Firebase access goes through `:aos-sdk` wrappers — consumers never import Firebase SDKs directly.
 
 > **Note:** feature flags are *not* part of `RuntimeConfig` (MG's payload). Use `RemoteConfigClient` for flags. Keeping MG narrow keeps boot fast.
 
@@ -153,8 +153,8 @@ All Firebase access goes through `:aos-core` wrappers — consumers never import
 |---|---|
 | `:core` | Pure JVM unit tests; trivial because `:core` is mostly contracts and immutable models |
 | `:data` | JUnit + MockK on `FintechApi`; assert mapping correctness |
-| `:features` ViewModels | JUnit + coroutine test dispatchers; fake `:core` interfaces (no `:data` or `:variants-*` involvement needed) |
-| `:variants-*` policies | Pure JVM unit tests of validation/calc rules |
+| `:features` ViewModels | JUnit + coroutine test dispatchers; fake `:core` interfaces (no `:data` or `:tenants:*:*` involvement needed) |
+| `:tenants:*:*` policies | Pure JVM unit tests of validation/calc rules |
 | `:app` integration | Hilt test rules to inject a fake `Session` and a chosen variant; one happy-path per variant |
 | End-to-end | Espresso/Compose UI tests against an MG that returns a Sandbox config |
 

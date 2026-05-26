@@ -1,6 +1,6 @@
 # 10 · Boot Phases
 
-> **Architectural promise:** the variant is selected once, at login. Configuration is fetched once, from MG, at cold start. There is no in-session swap.
+> **Architectural promise:** the tenant is selected once, at login. Configuration is fetched once, from MG, at cold start (with stale-config fallback). There is no in-session swap.
 >
 > This is the highest-leverage doc in the framework. Get the boot phases right and the rest of the architecture pays dividends.
 
@@ -14,7 +14,8 @@
 ├─────────────────────────────────────────────────────────────────┤
 │ 2. MG FETCH     BootCoordinator hits the hardcoded MG URL.      │
 │                  Receives RuntimeConfig { urls, maintenance,    │
-│                  forceUpdate }                                  │
+│                  forceUpdate, thirdPartyAppIds }. On failure,   │
+│                  falls back to last-known-good cache (≤24h).    │
 ├─────────────────────────────────────────────────────────────────┤
 │ 3. GATE         If maintenance.down or version < min →          │
 │                  MaintenanceGate; HARD STOP (no login).         │
@@ -22,15 +23,17 @@
 ├─────────────────────────────────────────────────────────────────┤
 │ 4. LOGIN        AuthRepository.login(...) → LoginResponse        │
 │                  containing { userSession, accounts[],          │
-│                  variantId }                                    │
+│                  tenantId, regionCode, defaultCurrency,         │
+│                  tenantFlags, tenantParams }                    │
 ├─────────────────────────────────────────────────────────────────┤
 │ 5. BUILD        BootCoordinator builds LoggedInComponent with   │
-│                  VariantContext from variantId and the Session  │
-│                  built from the LoginResponse                    │
+│                  TenantContext (from LoginResponse) and the     │
+│                  Session                                         │
 ├─────────────────────────────────────────────────────────────────┤
 │ 6. ENTER MAIN   Navigate to MainScaffold. ViewModels resolve    │
 │                  repositories (from :data) and policies (from   │
-│                  the active :variants-{id}) via LoggedInEntryPt │
+│                  the active :tenants:{region}:{tenantSlug})     │
+│                  via LoggedInEntryPoint                         │
 ├─────────────────────────────────────────────────────────────────┤
 │ 7. LOGOUT       LoggedInComponent dropped. All @LoggedInScoped  │
 │                  instances become GC-eligible. RuntimeConfig    │
@@ -38,21 +41,22 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Variant change requires logout.** There is no shortcut.
+**Tenant change requires logout.** There is no shortcut.
 
 ---
 
 ## 2. The Hardcoded MG URL (and only that)
 
-The only network configuration baked into the binary is the MG URL:
+The only network configuration baked into the binary is the MG URL, plus a single `staleConfigTtl` constant for the offline fallback window:
 
 ```kotlin
 // :app/build.gradle.kts (per build type)
 buildConfigField("String", "MG_URL", "\"https://mg.compass.bank/\"")
+buildConfigField("long", "STALE_CONFIG_TTL_MS", "86_400_000L")   // 24h
 // debug → "\"https://mg.staging.compass.bank/\""
 ```
 
-`MgClient` reads `BuildConfig.MG_URL`. Everything else — main API base URL, auxiliary endpoints, maintenance state, version floor — comes from MG's response. A backend URL change requires no new APK.
+`MgClient` reads `BuildConfig.MG_URL`. Everything else — main API base URL, third-party SDK app-ids (Sendbird, Google Maps), auxiliary endpoints, maintenance state, version floor — comes from MG's response. A backend URL change requires no new APK.
 
 → Detail: [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
 
@@ -134,7 +138,7 @@ annotation class LoggedInScoped
 interface LoggedInComponent {
     @DefineComponent.Builder
     interface Builder {
-        fun bindVariantContext(@BindsInstance ctx: VariantContext): Builder
+        fun bindTenantContext(@BindsInstance ctx: TenantContext): Builder
         fun bindSession(@BindsInstance session: Session): Builder
         fun build(): LoggedInComponent
     }
@@ -143,26 +147,26 @@ interface LoggedInComponent {
 @EntryPoint
 @InstallIn(LoggedInComponent::class)
 interface LoggedInEntryPoint {
-    fun transferRepository(): TransferRepository      // from :data
-    fun authRepository(): AuthRepository              // from :data
-    fun accountRepository(): AccountRepository        // from :data
-    fun transferAmountPolicy(): TransferAmountPolicy  // from :variants-{id}
-    fun feeCalculator(): FeeCalculator                // from :variants-{id}
-    fun capabilities(): VariantCapabilities           // from :variants-{id}
+    fun loanRepository(): LoanRepository                  // from :data
+    fun authRepository(): AuthRepository                  // from :data
+    fun repaymentRepository(): RepaymentRepository        // from :data
+    fun loanEligibilityPolicy(): LoanEligibilityPolicy    // from :tenants:{region}:{tenantSlug}
+    fun emiCalculator(): EmiCalculator                    // from :tenants:{region}:{tenantSlug}
+    fun capabilities(): TenantCapabilities                // from :tenants:{region}:{tenantSlug}
     fun session(): Session
 }
 ```
 
-Both `:data` and *every* `:variants-{id}` install into `LoggedInComponent::class`:
+Both `:data` and *every* concrete tenant module install into `LoggedInComponent::class`:
 
 ```kotlin
-@Module @InstallIn(LoggedInComponent::class) abstract class DataModule { … }       // shared repos
-@Module @InstallIn(LoggedInComponent::class) abstract class KhVariantModule { … }  // @IntoMap @VariantKey("kh")
-@Module @InstallIn(LoggedInComponent::class) abstract class VnVariantModule { … }  // @IntoMap @VariantKey("vn")
-@Module @InstallIn(LoggedInComponent::class) object VariantResolverModule { … }    // picks active by VariantContext.id
+@Module @InstallIn(LoggedInComponent::class) abstract class DataModule { … }            // shared repos
+@Module @InstallIn(LoggedInComponent::class) abstract class NhKhTenantModule { … }      // @IntoMap @TenantKey("cambodia:nh")
+@Module @InstallIn(LoggedInComponent::class) abstract class KhDefaultTenantModule { … } // @IntoMap @TenantKey("cambodia:default")
+@Module @InstallIn(LoggedInComponent::class) object TenantResolverModule { … }          // picks active by TenantContext.id
 ```
 
-Variant bindings use Dagger multibindings with a `@VariantKey("<id>")` map key, so all variants compile in without a duplicate-binding error. `VariantResolverModule` (in `:app`) looks up the active variant's entry from the map at injection time. See [07 — `:variants-*` § 6](07-variants.md) for the full pattern.
+Tenant bindings use Dagger multibindings with a `@TenantKey("<region>:<tenantSlug>")` map key, so all tenants compile in without a duplicate-binding error. `TenantResolverModule` (in `:app`) looks up the active tenant's entry from the map at injection time. See [07 — `:tenants:*` § 6](07-variants.md) for the full pattern.
 
 When the component is dropped (on logout), **every `@LoggedInScoped` instance becomes GC-eligible**. This is the structural mechanism that prevents one user's data from leaking into another user's session after logout.
 
@@ -176,17 +180,15 @@ The component is built once at login and dropped at logout:
 @Singleton
 class LoggedInComponentManager @Inject constructor(
     @LoggedInBuilder private val builderProvider: Provider<LoggedInComponent.Builder>,
-    private val variantContextResolver: VariantContextResolver,
 ) {
     private var current: LoggedInComponent? = null
     private val mutex = Mutex()
 
-    suspend fun build(variantId: VariantId, session: Session): LoggedInComponent =
+    suspend fun build(tenantContext: TenantContext, session: Session): LoggedInComponent =
         mutex.withLock {
             check(current == null) { "LoggedInComponent already built — call drop() first" }
-            val ctx = variantContextResolver.resolve(variantId)
             val fresh = builderProvider.get()
-                .bindVariantContext(ctx)
+                .bindTenantContext(tenantContext)
                 .bindSession(session)
                 .build()
             current = fresh
@@ -204,7 +206,7 @@ class LoggedInComponentManager @Inject constructor(
 
 `build()` is called from `BootCoordinator.onLoginSuccess(...)`. `drop()` is called from `LogoutHandler`. There are no other callers.
 
-> **Why no rebuild?** Variant change in production is logout. The user-visible operation is the same; the implementation is one Hilt component drop instead of an in-session swap with purge choreography.
+> **Why no rebuild?** Tenant change in production is logout. The user-visible operation is the same; the implementation is one Hilt component drop instead of an in-session swap with purge choreography.
 
 ---
 
@@ -214,10 +216,10 @@ class LoggedInComponentManager @Inject constructor(
 
 ```kotlin
 @HiltViewModel
-internal class TransferInputViewModel @Inject constructor(
-    private val transferRepo: TransferRepository,        // resolved from :data via LoggedInComponent
-    private val amountPolicy: TransferAmountPolicy,      // resolved from :variants-{active} via LoggedInComponent
-    capabilities: VariantCapabilities,                   // same path
+internal class LoanApplyViewModel @Inject constructor(
+    private val loanAppRepo: LoanApplicationRepository,         // resolved from :data via LoggedInComponent
+    private val eligibilityPolicy: LoanEligibilityPolicy,       // resolved from :tenants:{active} via LoggedInComponent
+    capabilities: TenantCapabilities,                           // same path
 ) : MviViewModel<…>(…) { … }
 ```
 
@@ -229,18 +231,18 @@ For Hilt to find these inside the ViewModel scope (which is a child of `Singleto
 object LoggedInBindingsModule {
 
     @Provides
-    fun transferRepository(manager: LoggedInComponentManager): TransferRepository =
-        EntryPoints.get(manager.current(), LoggedInEntryPoint::class.java).transferRepository()
+    fun loanRepository(manager: LoggedInComponentManager): LoanRepository =
+        EntryPoints.get(manager.current(), LoggedInEntryPoint::class.java).loanRepository()
 
     @Provides
-    fun transferAmountPolicy(manager: LoggedInComponentManager): TransferAmountPolicy =
-        EntryPoints.get(manager.current(), LoggedInEntryPoint::class.java).transferAmountPolicy()
+    fun loanEligibilityPolicy(manager: LoggedInComponentManager): LoanEligibilityPolicy =
+        EntryPoints.get(manager.current(), LoggedInEntryPoint::class.java).loanEligibilityPolicy()
 
     // … one provider per :core interface ViewModels consume
 }
 ```
 
-This indirection is small (one provider per interface) and pays for itself: ViewModels stay test-friendly with explicit interface dependencies, and the active variant + data bindings still resolve through `LoggedInComponent`.
+This indirection is small (one provider per interface) and pays for itself: ViewModels stay test-friendly with explicit interface dependencies, and the active tenant + data bindings still resolve through `LoggedInComponent`.
 
 > **Trade-off:** every `:core` interface that ViewModels consume needs a one-line provider entry. Acceptable given the surface (~15 interfaces) and stability.
 
@@ -256,7 +258,7 @@ Logout drops three categories of state:
 - **In-memory `Session`** held inside `LoggedInComponent`: dies with the component.
 - **`UserSession`** held inside `Session`: same.
 - **Repository instances** in `:data` (`@LoggedInScoped`): same.
-- **Policy instances** from the active variant (`@LoggedInScoped`): same.
+- **Policy instances** from the active tenant (`@LoggedInScoped`): same.
 
 ### 6.2 ViewModel state (medium sensitivity)
 
@@ -267,7 +269,7 @@ ViewModels are scoped to navigation back-stack entries. Logout **navigates to th
 | Cache | Cleared by |
 |---|---|
 | OkHttp response cache | `OkHttpClient.cache?.evictAll()` in `LogoutHandler` |
-| Image loader cache | `Coil`/`Glide` API, called in `LogoutHandler` |
+| Image loader cache | `Coil` API, called in `LogoutHandler` |
 
 Caches are *not* `@LoggedInScoped` (they are process-lifetime) — `LogoutHandler` has to clear them explicitly.
 
@@ -288,16 +290,16 @@ class LogoutHandler @Inject constructor(
 }
 ```
 
-### 6.4 Variant change happens through logout-login
+### 6.4 Tenant change happens through logout-login
 
-The boot mechanism naturally handles variant changes — there is no special "switch variant" code path.
+The boot mechanism naturally handles tenant changes — there is no special "switch tenant" code path.
 
-Concrete flow when a user signed in as KH wants to use VN credentials:
+Concrete flow when a user signed in as `cambodia:nh` wants to sign in to a different tenant:
 
 1. User taps **Logout**. `LogoutHandler.logout()` runs: `EncryptedPrefs` cleared, OkHttp cache evicted, `LoggedInComponent` dropped, navigation popped to `Route.Login`.
-2. User enters VN credentials. `AuthRepository.login(...)` returns `LoginResponse(userSession, accounts, variantId = "vn")`.
-3. `BootCoordinator.onLoginSuccess(...)` builds a fresh `LoggedInComponent` with `VariantContext(id = "vn", …)` and the VN-specific policy bindings.
-4. Navigation enters `MainScaffold`. ViewModels resolve `TransferAmountPolicy` to `VnTransferAmountPolicy`, `Fintech*Repo` to the same shared instances (variant-agnostic).
+2. User enters new credentials. `AuthRepository.login(...)` returns `LoginResponse(userSession, accounts, tenantId = "cambodia:partner-a", ...)`.
+3. `BootCoordinator.onLoginSuccess(...)` builds a fresh `LoggedInComponent` with `TenantContext(id = TenantId("cambodia:partner-a"), …)` and the Partner-A policy bindings.
+4. Navigation enters `MainScaffold`. ViewModels resolve `LoanEligibilityPolicy` to the Partner-A-bound impl (often the region-base impl `KhDefaultLoanEligibilityPolicy`), `Fintech*Repo` to the same shared instances (tenant-agnostic).
 
 **Navigation safety** is automatic:
 
@@ -305,61 +307,59 @@ Concrete flow when a user signed in as KH wants to use VN credentials:
 - The `LoggedInComponent` drop makes every `@LoggedInScoped` instance GC-eligible — no stale repo, policy, or session value can be reached.
 - `EncryptedPrefs.clearSessionScope()` removes tokens — a request issued during the brief gap before re-login wouldn't authenticate.
 
-The system handles "switch variant" as the same operation as "different user logs in" — because architecturally it is.
+The system handles "switch tenant" as the same operation as "different user logs in" — because architecturally it is.
 
 **Proof — instrumentation test that exercises the switch:**
 
 ```kotlin
-// :app/src/androidTest/.../VariantSwitchTest.kt
+// :app/src/androidTest/.../TenantSwitchTest.kt
 @HiltAndroidTest
-class VariantSwitchTest {
+class TenantSwitchTest {
 
     @Inject lateinit var bootCoordinator: BootCoordinator
     @Inject lateinit var componentManager: LoggedInComponentManager
     @Inject lateinit var logoutHandler: LogoutHandler
 
-    @Test fun `switching from KH to VN swaps active TransferAmountPolicy`() = runTest {
-        // 1. Log in as KH.
-        bootCoordinator.onLoginSuccess(loginResponseFor(VariantId("kh")))
-        val khPolicy = activePolicy<TransferAmountPolicy>()
-        assertTrue(khPolicy is KhTransferAmountPolicy)
-        assertEquals(Money(BigDecimal("4_000_000"), Currency.KHR), khPolicy.dailyLimit)
+    @Test fun `switching tenants resolves a different active policy chain`() = runTest {
+        // 1. Log in as cambodia:nh.
+        bootCoordinator.onLoginSuccess(loginResponseFor(TenantId("cambodia:nh")))
+        val nhStaffValidator = activePolicy<StaffIdValidator>()
+        assertTrue(nhStaffValidator is NhKhStaffIdValidator)
 
         // 2. Log out — drops the LoggedInComponent.
         logoutHandler.logout()
         assertFailsWith<IllegalStateException> { componentManager.current() }   // no active session
 
-        // 3. Log in as VN.
-        bootCoordinator.onLoginSuccess(loginResponseFor(VariantId("vn")))
-        val vnPolicy = activePolicy<TransferAmountPolicy>()
-        assertTrue(vnPolicy is VnTransferAmountPolicy)
-        assertEquals(Money(BigDecimal("500_000_000"), Currency.VND), vnPolicy.dailyLimit)
+        // 3. Log in as a different tenant.
+        bootCoordinator.onLoginSuccess(loginResponseFor(TenantId("cambodia:partner-a")))
+        val partnerAValidator = activePolicy<StaffIdValidator>()
+        assertTrue(partnerAValidator is PartnerAStaffIdValidator)
 
-        // 4. The KH instance from step 1 is GC-eligible — anything still holding it is leaked state.
-        assertNotSame(khPolicy, vnPolicy)
+        // 4. The NH instance from step 1 is GC-eligible — anything still holding it is leaked state.
+        assertNotSame(nhStaffValidator, partnerAValidator)
     }
 
     private inline fun <reified T> activePolicy(): T =
         EntryPoints.get(componentManager.current(), LoggedInEntryPoint::class.java)
             .let { entry ->
                 when (T::class) {
-                    TransferAmountPolicy::class -> entry.transferAmountPolicy() as T
+                    StaffIdValidator::class -> entry.staffIdValidator() as T
                     else -> error("Add accessor")
                 }
             }
 }
 ```
 
-The test confirms: after logout-login with a different `variantId`, the active `TransferAmountPolicy` is a different concrete class, with different rules, resolved by the same Hilt entry point — without any code change.
+The test confirms: after logout-login with a different `tenantId`, the active policy is a different concrete class, with different rules, resolved by the same Hilt entry point — without any code change.
 
 ---
 
 ## 7. What This Mechanism Does NOT Solve
 
 - **Multiple roles inside one session** — that's a `Session` concern. See [12 — Departments and Session](12-departments-and-session.md).
-- **A/B testing of two variants simultaneously** — each `Application` instance can host one logged-in session. Side-by-side comparison requires two devices or two app installs.
+- **A/B testing of two tenants simultaneously** — each `Application` instance can host one logged-in session. Side-by-side comparison requires two devices or two app installs.
 - **Background workers (`WorkManager`) launched during one session and completing after logout** — solve by tagging work requests with `userId` and rejecting on mismatch in the worker's first step.
-- **Variant change without logout** — explicitly out of scope. The user-visible operation is logout-then-login.
+- **Tenant change without logout** — explicitly out of scope. The user-visible operation is logout-then-login.
 
 ---
 
@@ -368,3 +368,4 @@ The test confirms: after logout-login with a different `variantId`, the active `
 - Where the boot is invoked from: [08 — `:app`](08-app-orchestrator.md)
 - The `RuntimeConfig` that drives the gate: [11 — MG and Runtime Config](11-mg-and-runtime-config.md)
 - The `Session` and account switching: [12 — Departments and Session](12-departments-and-session.md)
+- The tenant behavioral model: [19 — Tenants and Regions](19-tenants-and-variants.md)

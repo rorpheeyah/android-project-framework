@@ -10,8 +10,8 @@
 
 `:design-system` is the **shared visual library** — the theme, the components, and the Compose extensions every UI module uses. It exists for two reasons:
 
-1. **Cross-module consistency.** `CompassButton` looks the same in `:features`, `:features-chatbot`, and any `:features-{variant-feature}`. The button is defined once.
-2. **Sibling isolation without duplication.** Sibling UI modules (`:features` and `:features-chatbot`, plus any `:features-{variant-feature}`) cannot import each other. Without `:design-system`, they would each have to re-implement the design system. With it, they all depend on it directly — no cross-edges, no duplicated primitives.
+1. **Cross-module consistency.** `CompassButton` looks the same in `:features`, `:features-chatbot`, and any `:features-{tenant-feature}`. The button is defined once.
+2. **Sibling isolation without duplication.** Sibling UI modules (`:features` and `:features-chatbot`, plus any `:features-{tenant-feature}`) cannot import each other. Without `:design-system`, they would each have to re-implement the design system. With it, they all depend on it directly — no cross-edges, no duplicated primitives.
 
 If a Composable belongs in *every* feature module, it lives here. If it belongs in *one* feature, it lives there.
 
@@ -140,13 +140,13 @@ Every UI module uses this. No feature redefines its own buttons.
 
 ## 5. What `:design-system` Must Never Contain
 
-- **Banking types** — `Money`, `Account`, `TransferIntent`, etc. The design system is variant-agnostic and domain-agnostic. Domain types belong in `:core/model/`.
-- **Variant references** — `VariantId`, `VariantContext`. The design system has no notion of variants by definition.
-- **Feature-specific Composables** — `LoginScreen`, `TransferInputScreen`. Those belong in the feature module that owns them.
-- **Networking, storage, security** — those are `:aos-core`.
+- **Banking types** — `Money`, `Account`, `LoanApplication`, `RepaymentSchedule`, etc. The design system is tenant-agnostic and domain-agnostic. Domain types belong in `:core/model/`.
+- **Tenant references** — `TenantId`, `TenantContext`. The design system has no notion of tenants by definition.
+- **Feature-specific Composables** — `LoginScreen`, `LoanApplyScreen`, `KycCaptureScreen`. Those belong in the feature module that owns them.
+- **Networking, storage, security** — those are `:aos-sdk`.
 - **Hilt modules** — DI assembly is the orchestrator's job.
 
-If a Composable needs to render a `Money` value, it accepts the formatted `String` — the formatting happens upstream (a feature ViewModel calls a variant-supplied `AmountFormatter`).
+If a Composable needs to render a `Money` value, it accepts the formatted `String` — the formatting happens upstream (a feature ViewModel calls a tenant-supplied `AmountFormatter`).
 
 ---
 
@@ -154,16 +154,16 @@ If a Composable needs to render a `Money` value, it accepts the formatted `Strin
 
 | Module | Dependency |
 |---|---|
-| `:design-system` → | `:aos-core` only (and Compose / Material3 libraries) |
+| `:design-system` → | `:aos-sdk` only (and Compose / Material3 libraries) |
 
-Notably, `:design-system` does **not** depend on `:core`. The design system is variant-agnostic and domain-agnostic; nothing in `:core` should leak into it.
+Notably, `:design-system` does **not** depend on `:core`. The design system is tenant-agnostic and domain-agnostic; nothing in `:core` should leak into it.
 
 | Modules that depend on `:design-system` | |
 |---|---|
 | `:features` | Yes — uses every primitive |
 | `:features-chatbot` | Yes — uses theme + components |
-| `:features-{variant-feature}` | Yes (e.g. `:features-bakong-disputes`) |
-| `:data`, `:variants-*` | No — they have no UI |
+| `:features-{tenant-feature}` | Yes (e.g. `:features-bakong-disputes`) |
+| `:data`, `:tenants:*:*` | No — they have no UI |
 | `:app` | Yes — wraps `NavHost` in `CompassTheme` |
 
 ---
@@ -190,4 +190,4 @@ A change to `:design-system` triggers recompile of every UI module that depends 
 
 - The UI engine that consumes `:design-system`: [06 — `:features`](06-features.md)
 - The dependency DAG: [01 — Module Topology](01-module-topology.md)
-- Where variant-unique features live (also consume `:design-system`): [07 — `:variants-*` § "When the Variant Has Unique Features"](07-variants.md)
+- Where tenant-unique features live (also consume `:design-system`): [07 — `:tenants:*` § "When the Tenant Has Unique Features"](07-variants.md)

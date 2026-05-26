@@ -1,72 +1,90 @@
-# 07 · `:variants-*` — Variant Silos
+# 07 · `:tenants:*` — Tenants and Region Bases
 
-> **Type:** One Local Android library per variant (`:variants-kh`, `:variants-vn`, `:variants-ppcbank`, …)
-> **Role:** Variant-specific **policies** (validation, fees, formatting, capabilities) + DI bindings.
-> **Isolation guarantee:** No variant module may depend on another variant module.
+> **Type:** Local Android library modules, organized as a two-level hierarchy:
+> - **Region base** — `:tenants:{region}:base` (one per region, e.g., `:tenants:cambodia:base`, `:tenants:korea:base`)
+> - **Concrete tenants** — `:tenants:{region}:{tenantSlug}` (e.g., `:tenants:korea:nh`, `:tenants:korea:shinsegae`)
+>
+> **Role:** Tenant-specific **policies** (validation, fees, formatting, capabilities) + DI bindings. Region bases provide shared regulator/region policy classes; concrete tenants declare Hilt `@TenantKey` bindings.
+>
+> **Isolation guarantee:** No concrete tenant module may depend on another concrete tenant. No region base may depend on another region base. Concrete tenants depend on their own region base only.
+
+> **Historical note:** earlier iterations used `:variants-{id}` flat sibling modules paired with a separate tenant axis nested inside. That two-axis model has been collapsed — see [19 § 12](19-tenants-and-variants.md).
 
 ---
 
 ## 1. Purpose
 
-A variant module is a **silo** that holds *only what differs* between regions or companies. With a unified server-side API, the data layer is shared across variants — so a variant module is reduced to:
+A tenant module is a **silo** that holds *only what differs* between organizations (or, for region bases, between regulator domains). With a unified server-side API, the data layer is shared across tenants — so each tenant module is reduced to:
 
 1. **Policy implementations** — `:core` policy interfaces (fee calc, amount validation, formatting, business rules)
-2. **Capability flags** — implementations of `VariantCapabilities`
-3. **DI bindings** — one Hilt module exposing those impls to `LoggedInComponent`
+2. **Capability flags** — implementations of `TenantCapabilities`
+3. **`TenantProfile` factory** — produces the `TenantContext` (flags + params) from `LoginResponse`
+4. **DI bindings** — one Hilt module exposing those impls to `LoggedInComponent` via `@IntoMap @TenantKey("<region>:<tenantSlug>")`
 
-It does **not** own:
+A tenant module does **not** own:
 
 - UI (lives in `:features`)
-- Retrofit interfaces or DTOs (the server demuxes; one `FintechApi` lives in `:data`)
+- Retrofit interfaces or DTOs (the server demuxes; the unified `Fintech*Api` lives in `:data`)
 - Repository implementations (also in `:data`)
 
-A typical variant module is 5–15 small Kotlin files.
+A typical concrete tenant module is 5–15 small Kotlin files. A region-base module is similarly small — usually 8–15 policy classes that the regulator/region mandates.
 
 ---
 
-## 2. Standard Variant Module Shape
+## 2. Module Hierarchy
 
 ```
-:variants-kh/
-└── src/main/kotlin/com/<org>/variants/kh/
-    ├── policy/
-    │   ├── KhTransferAmountPolicy.kt   # implements TransferAmountPolicy
-    │   ├── KhFeeCalculator.kt          # implements FeeCalculator
-    │   ├── KhBeneficiaryValidator.kt   # implements BeneficiaryValidator
-    │   ├── KhOtpDeliveryPolicy.kt      # implements OtpDeliveryPolicy
-    │   ├── KhComplianceThresholds.kt   # implements ComplianceThresholds
-    │   └── KhBusinessCalendar.kt       # implements BusinessCalendar
-    ├── format/
-    │   └── KhrAmountFormatter.kt       # implements AmountFormatter
-    ├── capability/
-    │   └── KhCapabilities.kt           # implements VariantCapabilities
-    ├── support/
-    │   └── KhSupportContacts.kt        # implements SupportContacts
-    └── di/
-        └── KhVariantModule.kt          # @Module @InstallIn(LoggedInComponent::class)
+:tenants/
+├── cambodia/
+│   ├── base/                                           ← region baseline
+│   │   └── src/main/kotlin/com/<org>/tenants/cambodia/base/
+│   │       ├── policy/
+│   │       │   ├── KhDefaultLoanEligibilityPolicy.kt
+│   │       │   ├── KhDefaultRepaymentPenaltyCalculator.kt
+│   │       │   ├── KhComplianceThresholds.kt
+│   │       │   ├── KhOtpDeliveryPolicy.kt
+│   │       │   └── KhBusinessCalendar.kt
+│   │       ├── format/
+│   │       │   ├── KhrAmountFormatter.kt
+│   │       │   └── UsdAmountFormatter.kt              (dual-currency for KH)
+│   │       └── capability/
+│   │           └── KhBaseCapabilities.kt
+│   ├── default/                                        ← sentinel tenant (used in tests + no-override baseline)
+│   │   └── di/
+│   │       └── KhDefaultTenantModule.kt                (@TenantKey("cambodia:default"))
+│   └── nh/                                             ← concrete tenant (this PRD's product)
+│       ├── flags/
+│       │   └── NhKhTenantProfile.kt                    (TenantContext factory: flags + params)
+│       ├── policy/
+│       │   └── NhKhStaffIdValidator.kt                 (tenant-specific override)
+│       └── di/
+│           └── NhKhTenantModule.kt                     (@TenantKey("cambodia:nh"))
+└── korea/                                              (similar shape if KR ships)
+    ├── base/
+    ├── default/
+    └── nh/
 ```
 
 | Layer | Purpose | Visibility |
 |---|---|---|
-| `policy/` | Variant-specific business rules implementing `:core` policy interfaces | `internal` |
+| `policy/` (in base or tenant) | Business rules implementing `:core` policy interfaces | `internal` |
 | `format/` | Locale/currency formatting helpers | `internal` |
 | `capability/` | Boolean flags gating UI features | `internal` |
-| `support/` | Customer-care contact info (per-region phone, email, hours) | `internal` |
-| `di/` | The single public surface — Hilt bindings exposed to `:app` | `public` |
+| `flags/` (in concrete tenant) | `TenantProfile` factory producing `TenantContext` | `internal` |
+| `di/` | The single public surface — Hilt module exposed to `:app` | `public` |
 
-**Only the DI module should be visible outside the variant module.** Everything else is `internal`. This prevents `:app` from accidentally referencing a concrete policy class — it should only ever reference the `:core` interface.
+**Only the DI module should be visible outside the tenant module.** Everything else is `internal`. This prevents `:app` from accidentally referencing a concrete policy class — it should only ever reference the `:core` interface.
 
 ---
 
-## 3. The Variant Catalogue
+## 3. The Region Catalogue
 
-| Module | Market | Distinctive responsibilities |
+| Region module | Regulator | Distinctive baseline responsibilities |
 |---|---|---|
-| `:variants-kh` | Cambodia | NBC compliance limits, KHR formatting, KHQR capability flag |
-| `:variants-vn` | Vietnam | SBV-aligned daily limits, VND formatting, VietQR capability flag |
-| `:variants-ppcbank` | PPCBank legacy | PPC-specific limits, dual-currency formatting |
+| `:tenants:cambodia:base` | NBC | KHR/USD formatting, NBC compliance limits, KH business calendar |
+| `:tenants:korea:base` | FSS (if KR ships) | KRW formatting, FSS compliance limits, KR business calendar |
 
-Future variants land here as siblings: `:variants-my`, `:variants-th`, etc. See [13 — Onboarding a Variant](13-onboarding-a-variant.md).
+Each region typically lists 1–N concrete tenants alongside the `base` + `default` siblings. See [19 § 1](19-tenants-and-variants.md) for the concrete-tenant matrix and [13 — Onboarding a Tenant](13-onboarding-a-variant.md).
 
 ---
 
@@ -75,67 +93,54 @@ Future variants land here as siblings: `:variants-my`, `:variants-th`, etc. See 
 Pure Kotlin classes implementing `:core` policy interfaces. Stateless where possible.
 
 ```kotlin
-internal class KhTransferAmountPolicy : TransferAmountPolicy {
-    override val dailyLimit: Money = Money(BigDecimal("4_000_000.00"), Currency.KHR)
-    override fun validate(amount: Money): ValidationResult = when {
-        amount.value <= BigDecimal.ZERO -> ValidationResult.Invalid("Must be positive")
-        amount > dailyLimit             -> ValidationResult.Invalid("Above daily limit")
-        else                            -> ValidationResult.Valid
+// Region-base example — regulator-wide rule, shared by every tenant in Cambodia
+internal class KhDefaultLoanEligibilityPolicy : LoanEligibilityPolicy {
+    override val minAgeYears: Int = 18
+    override val maxLoanToIncomeRatio: BigDecimal = BigDecimal("0.45")
+    override fun validate(applicant: LoanApplicant): ValidationResult = when {
+        applicant.age < minAgeYears                       -> ValidationResult.Invalid("Must be 18+")
+        applicant.loanToIncomeRatio > maxLoanToIncomeRatio -> ValidationResult.Invalid("Above LTI cap")
+        else                                              -> ValidationResult.Valid
     }
 }
 
-internal class KhFeeCalculator : FeeCalculator {
-    override fun quote(amount: Money, channel: TransferChannel): FeeQuote =
-        when (channel) {
-            TransferChannel.Internal -> FeeQuote.zero(amount.currency)
-            TransferChannel.External -> FeeQuote(Money(amount.value * BigDecimal("0.005"), amount.currency))
-        }
+// Region-base example — shared formatting
+internal class KhrAmountFormatter : AmountFormatter {
+    override fun format(amount: Money): String = "%,.0f៛".format(amount.value)
 }
 
-internal class KhCapabilities : VariantCapabilities {
-    override fun supportsKhqrScan(): Boolean = true
-    override fun supportsCardlessAtm(): Boolean = false
-    override fun supportsBilingualReceipt(): Boolean = true
+// Concrete-tenant example — tenant-specific override
+internal class NhKhStaffIdValidator : StaffIdValidator {
+    private val nhStaffRegex = Regex("""^NH\d{9}$""")  // NH staff IDs only
+    override fun validate(id: String) =
+        if (nhStaffRegex.matches(id)) ValidationResult.Valid
+        else ValidationResult.Invalid("Must be NH staff ID (NH + 9 digits)")
 }
 ```
 
-No networking, no Android dependencies, easily JVM-unit-testable.
+No networking, no Android dependencies, JVM-unit-testable.
 
 ---
 
-## 5. Common Variant Surfaces
+## 5. Common Tenant/Region Surfaces
 
-Beyond `TransferAmountPolicy`, `FeeCalculator`, `AmountFormatter`, and `VariantCapabilities`, fintech variants typically also implement these `:core` interfaces. None of them require new infrastructure — they're added to `:core/policy/` as needed and implemented per variant.
+The following `:core` policy interfaces are typical inhabitants of region bases and concrete tenants. The placement (base vs concrete) depends on whether the rule is regulator-wide or org-specific.
 
-### 5.1 `BeneficiaryValidator`
+### 5.1 `LoanEligibilityPolicy` *(region base)*
 
-Account-number and phone-number formats vary by region. The validator hides the regex.
+Age, income, bureau-score thresholds. Regulator-wide.
 
-```kotlin
-// :core/policy/BeneficiaryValidator.kt
-interface BeneficiaryValidator {
-    fun validateAccountNumber(account: String): ValidationResult
-    fun validatePhoneNumber(phone: String): ValidationResult
-}
+### 5.2 `EmiCalculator` *(region base)*
 
-// :variants-kh/policy/KhBeneficiaryValidator.kt
-internal class KhBeneficiaryValidator : BeneficiaryValidator {
-    private val accountRegex = Regex("""^\d{9}$""")        // 9-digit Cambodia account
-    private val phoneRegex = Regex("""^(?:\+855|0)\d{8,9}$""")
+Rounding rules, day-count convention. Regulator-wide.
 
-    override fun validateAccountNumber(account: String) =
-        if (accountRegex.matches(account)) ValidationResult.Valid
-        else ValidationResult.Invalid("Account must be 9 digits")
+### 5.3 `RepaymentPenaltyCalculator` *(region base)*
 
-    override fun validatePhoneNumber(phone: String) =
-        if (phoneRegex.matches(phone)) ValidationResult.Valid
-        else ValidationResult.Invalid("Use +855 or 0 prefix")
-}
-```
+Overdue penalty rules per regulator.
 
-### 5.2 `OtpDeliveryPolicy`
+### 5.4 `OtpDeliveryPolicy` *(region base)*
 
-Preferred OTP channel and timing differ per market and risk profile.
+Preferred OTP channel and timing, regulator-mandated.
 
 ```kotlin
 // :core/policy/OtpDeliveryPolicy.kt
@@ -147,7 +152,7 @@ interface OtpDeliveryPolicy {
     val expirySeconds: Int
 }
 
-// :variants-kh/policy/KhOtpDeliveryPolicy.kt
+// :tenants:cambodia:base/policy/KhOtpDeliveryPolicy.kt
 internal class KhOtpDeliveryPolicy : OtpDeliveryPolicy {
     override val preferredChannel: OtpChannel = OtpChannel.Sms
     override val codeLength: Int = 6
@@ -155,493 +160,189 @@ internal class KhOtpDeliveryPolicy : OtpDeliveryPolicy {
 }
 ```
 
-### 5.3 `SupportContacts`
+### 5.5 `SupportContacts` *(concrete tenant)*
 
-Customer-care contact info, surfaced in the help screen.
+Customer-care contact info, surfaced in the help screen. Differs per tenant org.
 
 ```kotlin
-// :core/policy/SupportContacts.kt
-interface SupportContacts {
-    val customerCarePhone: String
-    val customerCareEmail: String
-    val customerCareHours: String  // e.g. "Mon–Fri, 8 AM – 8 PM ICT"
-}
-
-// :variants-kh/support/KhSupportContacts.kt
-internal class KhSupportContacts : SupportContacts {
+// :tenants:cambodia:nh/support/NhKhSupportContacts.kt
+internal class NhKhSupportContacts : SupportContacts {
     override val customerCarePhone   = "+855 23 999 999"
-    override val customerCareEmail   = "support.kh@compass.bank"
+    override val customerCareEmail   = "support@nhfinance.kh"
     override val customerCareHours   = "Mon–Fri, 8 AM – 8 PM (ICT)"
 }
 ```
 
-### 5.4 `ComplianceThresholds`
+### 5.6 `ComplianceThresholds` *(region base)*
 
-Per-region regulatory limits for transfer scrutiny. Surfaces appear in transfer review (extra confirmation step) and history (filter highlighting).
+Per-regulator transaction-scrutiny thresholds.
+
+### 5.7 `BusinessCalendar` *(region base)*
+
+Bank holidays and settlement cutoffs.
+
+### 5.8 `KycRequirementPolicy` *(region base, possibly overridden by concrete tenant)*
+
+Which documents are required for KYC. Regulator sets the baseline; some tenant orgs may require additional docs.
 
 ```kotlin
-// :core/policy/ComplianceThresholds.kt
-interface ComplianceThresholds {
-    val largeTransferThreshold: Money       // requires re-auth before submit
-    val crossBorderThreshold: Money         // requires extra disclosure
-    val dailyAggregateLimit: Money
+// :core/policy/KycRequirementPolicy.kt
+interface KycRequirementPolicy {
+    val requiredDocuments: List<KycDocumentType>
+    val requiresLivenessSelfie: Boolean
 }
 
-// :variants-kh/policy/KhComplianceThresholds.kt
-internal class KhComplianceThresholds : ComplianceThresholds {
-    override val largeTransferThreshold = Money(BigDecimal("4_000_000"), Currency.KHR)
-    override val crossBorderThreshold   = Money(BigDecimal("4_000_000"), Currency.KHR)
-    override val dailyAggregateLimit    = Money(BigDecimal("40_000_000"), Currency.KHR)
+// :tenants:cambodia:base/policy/KhDefaultKycRequirementPolicy.kt — NBC baseline
+internal class KhDefaultKycRequirementPolicy : KycRequirementPolicy {
+    override val requiredDocuments = listOf(KycDocumentType.IdCardFront, KycDocumentType.IdCardBack)
+    override val requiresLivenessSelfie = true
 }
 ```
 
-### 5.5 `BusinessCalendar`
+### 5.9 `StaffIdPolicy` *(concrete tenant)*
 
-Bank holidays and settlement cutoffs. The transfer review screen reads it to display "settles next business day" warnings.
+Referral-code validation. Differs per org.
 
-```kotlin
-// :core/policy/BusinessCalendar.kt
-enum class SettlementWindow { SameDay, NextBusinessDay, TPlus2 }
+### 5.10 Adding a new policy surface
 
-interface BusinessCalendar {
-    fun isBankHoliday(date: LocalDate): Boolean
-    fun nextBusinessDay(date: LocalDate): LocalDate
-    fun settlementWindow(channel: TransferChannel): SettlementWindow
-}
+When `:core/policy/` gains a new interface, every concrete tenant must bind it. The build fails until each tenant explicitly answers what its behavior is. Avoid `default` fallbacks on policy interfaces; force the per-tenant decision.
 
-// :variants-kh/policy/KhBusinessCalendar.kt
-internal class KhBusinessCalendar : BusinessCalendar {
-    private val nbcHolidays2026 = setOf(
-        LocalDate.of(2026, 1, 1),   // New Year
-        LocalDate.of(2026, 4, 14),  // Khmer New Year (representative)
-        // …
-    )
-
-    override fun isBankHoliday(date: LocalDate) = date in nbcHolidays2026
-    override fun nextBusinessDay(date: LocalDate): LocalDate { /* skip weekends + holidays */ }
-    override fun settlementWindow(channel: TransferChannel) = when (channel) {
-        TransferChannel.Internal -> SettlementWindow.SameDay
-        TransferChannel.External -> SettlementWindow.NextBusinessDay
-    }
-}
-```
-
-### 5.6 `ReceiptRenderer`
-
-Receipts are the variant difference most users actually see. Each regulator mandates a different set of fields, a different consumer disclosure, and sometimes a different language — but the input (a finalised transfer) is identical everywhere. The renderer converts a variant-agnostic `TransferReceipt` into a variant-shaped `RenderedReceipt` that the UI walks line by line.
-
-```kotlin
-// :core/policy/ReceiptRenderer.kt
-interface ReceiptRenderer {
-    fun render(receipt: TransferReceipt, primaryLanguage: String): RenderedReceipt
-}
-
-// :core/model/TransferReceipt.kt — same shape for every variant
-data class TransferReceipt(
-    val id: TransferId,
-    val amount: Money,
-    val senderName: String,
-    val senderAccount: String,         // already masked by :data
-    val recipientName: String,
-    val recipientAccount: String,
-    val timestamp: Instant,
-    val reference: String,
-    val fee: Money,
-    val channel: TransferChannel,
-)
-
-// :core/model/RenderedReceipt.kt — variant-shaped output
-data class RenderedReceipt(
-    val title: String,
-    val lines: List<ReceiptLine>,
-    val footer: String?,
-    val regulatoryDisclosure: String?,
-)
-
-data class ReceiptLine(val label: String, val value: String)
-```
-
-The output is intentionally a flat list of label/value rows plus an optional disclosure. The UI cannot branch on field meaning because the rendered shape carries no semantics beyond "show these in order" — which is exactly what keeps `:features` Logic-Blind.
-
-**KH — bilingual KH + EN, NBC-mandated disclosure**
-
-```kotlin
-// :variants-kh/policy/KhReceiptRenderer.kt
-internal class KhReceiptRenderer @Inject constructor(
-    private val formatter: AmountFormatter,         // resolves to KhrAmountFormatter
-) : ReceiptRenderer {
-
-    override fun render(r: TransferReceipt, primaryLanguage: String): RenderedReceipt {
-        val s = if (primaryLanguage == "km") KmStrings else EnStrings
-        val lines = listOf(
-            ReceiptLine(s.amount,    formatter.format(r.amount)),
-            ReceiptLine(s.sender,    r.senderName),
-            ReceiptLine(s.recipient, r.recipientName),
-            ReceiptLine(s.reference, r.reference),
-            ReceiptLine(s.timestamp, r.timestamp.format(KhDateTimeFormatter)),
-            ReceiptLine(s.fee,       formatter.format(r.fee)),
-        )
-        return RenderedReceipt(
-            title = s.title,
-            lines = lines,
-            footer = s.thankYou,
-            regulatoryDisclosure = s.nbcDisclosure,    // shown smaller below the rows
-        )
-    }
-
-    private object EnStrings { /* "Amount", "Sender", … "Authorised under NBC Prakas …" */ }
-    private object KmStrings { /* "ចំនួនទឹកប្រាក់", "អ្នកផ្ញើ", … */ }
-}
-```
-
-**VN — single-language, SBV-aligned, extra settlement reference**
-
-```kotlin
-// :variants-vn/policy/VnReceiptRenderer.kt
-internal class VnReceiptRenderer @Inject constructor(
-    private val formatter: AmountFormatter,            // resolves to VndAmountFormatter
-    private val napasLookup: NapasSettlementLookup,    // variant-internal helper, not in :core
-) : ReceiptRenderer {
-
-    override fun render(r: TransferReceipt, primaryLanguage: String): RenderedReceipt {
-        val napasId = napasLookup.idFor(r.id)          // SBV requires the NAPAS ref on the receipt
-        val lines = listOf(
-            ReceiptLine("Số tiền",      formatter.format(r.amount)),
-            ReceiptLine("Người gửi",    r.senderName),
-            ReceiptLine("Người nhận",   r.recipientName),
-            ReceiptLine("Mã giao dịch", r.reference),
-            ReceiptLine("Mã NAPAS",     napasId),       // no equivalent row on KH receipts
-            ReceiptLine("Thời gian",    r.timestamp.format(VnDateTimeFormatter)),
-            ReceiptLine("Phí",          formatter.format(r.fee)),
-        )
-        return RenderedReceipt(
-            title = "Biên lai giao dịch",
-            lines = lines,
-            footer = "Cảm ơn quý khách đã sử dụng Compass.",
-            regulatoryDisclosure = "Được giám sát bởi NHNN. Lưu biên lai để đối chiếu.",
-        )
-    }
-}
-```
-
-What differs between the two implementations:
-
-- **Languages** — KH swaps an entire string table at runtime; VN is single-language.
-- **Line set** — VN inserts a `Mã NAPAS` row sourced from a country-specific lookup that doesn't exist in `:variants-kh`.
-- **Internal dependencies** — VN injects `NapasSettlementLookup`, an `internal` class living inside `:variants-vn`. KH has no equivalent. Variants are free to keep their own helpers; only the Hilt module is exposed (see §2).
-- **Disclosure text** — different regulator, different statute, different language.
-
-What stays identical: the interface, the `TransferReceipt` input, the `RenderedReceipt` output shape, and the Hilt binding pattern in §6.2.
-
-**The UI consumer — same file for every variant**
-
-```kotlin
-// :features/transfer/TransferReceiptScreen.kt
-@Composable
-fun TransferReceiptScreen(vm: TransferReceiptViewModel = hiltViewModel()) {
-    val rendered = vm.state.collectAsState().value.rendered ?: return
-    Column {
-        CompassReceiptHeader(rendered.title)
-        rendered.lines.forEach { CompassReceiptRow(it.label, it.value) }
-        rendered.footer?.let { CompassReceiptFooter(it) }
-        rendered.regulatoryDisclosure?.let { CompassDisclosure(it) }
-    }
-}
-```
-
-The screen walks the rendered list. It doesn't know — and cannot know — which fields the active variant produced or whether the disclosure cites NBC or NHNN. Onboard a new market and this file does not change.
-
-### 5.7 Adding a new variant surface
-
-When `:core/policy/` gains a new method (or a new policy interface is added), every existing variant must update. This is by design — the build fails until each variant explicitly answers what its behavior is. Avoid `default` fallbacks on policy interfaces; force the per-variant decision.
-
-### 5.8 Worked test example
+### 5.11 Worked test example
 
 Because policies are pure Kotlin classes with no Android dependencies, unit tests run on the JVM with no fixtures.
 
 ```kotlin
-// :variants-kh/src/test/kotlin/com/<org>/variants/kh/policy/KhTransferAmountPolicyTest.kt
-class KhTransferAmountPolicyTest {
+// :tenants:cambodia:base/src/test/kotlin/.../KhDefaultLoanEligibilityPolicyTest.kt
+class KhDefaultLoanEligibilityPolicyTest {
 
-    private val policy = KhTransferAmountPolicy()
+    private val policy = KhDefaultLoanEligibilityPolicy()
 
-    @Test fun `zero amount is invalid`() {
-        val result = policy.validate(Money(BigDecimal.ZERO, Currency.KHR))
-        assertEquals(ValidationResult.Invalid("Must be positive"), result)
+    @Test fun `underage applicant is invalid`() {
+        val applicant = LoanApplicant(age = 17, /* … */)
+        val result = policy.validate(applicant)
+        assertEquals(ValidationResult.Invalid("Must be 18+"), result)
     }
 
-    @Test fun `negative amount is invalid`() {
-        val result = policy.validate(Money(BigDecimal("-1.00"), Currency.KHR))
-        assertEquals(ValidationResult.Invalid("Must be positive"), result)
+    @Test fun `over-LTI applicant is invalid`() {
+        val applicant = LoanApplicant(age = 30, loanToIncomeRatio = BigDecimal("0.50"), /* … */)
+        val result = policy.validate(applicant)
+        assertEquals(ValidationResult.Invalid("Above LTI cap"), result)
     }
 
-    @Test fun `amount above daily limit is invalid`() {
-        val result = policy.validate(Money(BigDecimal("4_000_001"), Currency.KHR))
-        assertEquals(ValidationResult.Invalid("Above daily limit"), result)
-    }
-
-    @Test fun `amount at daily limit is valid`() {
-        val result = policy.validate(Money(BigDecimal("4_000_000"), Currency.KHR))
-        assertEquals(ValidationResult.Valid, result)
+    @Test fun `eligible applicant is valid`() {
+        val applicant = LoanApplicant(age = 30, loanToIncomeRatio = BigDecimal("0.40"), /* … */)
+        assertEquals(ValidationResult.Valid, policy.validate(applicant))
     }
 }
 ```
 
-Run with `./gradlew :variants-kh:test`. No Hilt, no Android runtime, no test fixtures.
-
-### 5.9 Snapshot: how different are variants in practice?
-
-To make the contract-vs-content split concrete, here are the same `:core` policy interfaces implemented for **KH (Cambodia)** and **VN (Vietnam)**. Same interfaces, different content — this is exactly the architecture's point.
-
-**`TransferAmountPolicy`**
-
-```kotlin
-// :variants-kh
-internal class KhTransferAmountPolicy : TransferAmountPolicy {
-    override val dailyLimit = Money(BigDecimal("4_000_000"), Currency.KHR)        // 4M KHR ≈ $1000
-    override fun validate(amount: Money) = when {
-        amount.value <= BigDecimal.ZERO -> ValidationResult.Invalid("Must be positive")
-        amount > dailyLimit             -> ValidationResult.Invalid("Above daily limit")
-        else                            -> ValidationResult.Valid
-    }
-}
-
-// :variants-vn
-internal class VnTransferAmountPolicy : TransferAmountPolicy {
-    override val dailyLimit = Money(BigDecimal("500_000_000"), Currency.VND)      // 500M VND ≈ $20,000
-    override fun validate(amount: Money) = when {
-        amount.value <= BigDecimal.ZERO         -> ValidationResult.Invalid("Số tiền phải > 0")
-        amount.value < BigDecimal("10_000")     -> ValidationResult.Invalid("Tối thiểu 10,000 VND")
-        amount > dailyLimit                     -> ValidationResult.Invalid("Vượt hạn mức ngày")
-        else                                    -> ValidationResult.Valid
-    }
-}
-```
-
-VN has an extra minimum-amount rule (regulator-mandated). KH doesn't. Same interface, different rules.
-
-**`FeeCalculator`**
-
-```kotlin
-// :variants-kh — flat percentage
-internal class KhFeeCalculator : FeeCalculator {
-    override fun quote(amount: Money, channel: TransferChannel) = when (channel) {
-        TransferChannel.Internal -> FeeQuote.zero(amount.currency)
-        TransferChannel.External -> FeeQuote(Money(amount.value * BigDecimal("0.005"), amount.currency))  // 0.5%
-    }
-}
-
-// :variants-vn — tiered
-internal class VnFeeCalculator : FeeCalculator {
-    override fun quote(amount: Money, channel: TransferChannel) = when (channel) {
-        TransferChannel.Internal -> FeeQuote.zero(amount.currency)
-        TransferChannel.External -> {
-            val fee = if (amount.value <= BigDecimal("500_000"))
-                Money(BigDecimal("7_700"), amount.currency)                       // flat 7,700 VND for ≤500k
-            else
-                Money(amount.value * BigDecimal("0.0005"), amount.currency)       // 0.05% above
-            FeeQuote(fee)
-        }
-    }
-}
-```
-
-**`VariantCapabilities`**
-
-```kotlin
-// :variants-kh
-internal class KhCapabilities : VariantCapabilities {
-    override fun supportsKhqrScan()           = true       // Cambodia uses KHQR
-    override fun supportsCardlessAtm()        = false
-    override fun supportsBilingualReceipt()   = true       // KH + EN
-}
-
-// :variants-vn
-internal class VnCapabilities : VariantCapabilities {
-    override fun supportsKhqrScan()           = false      // VN uses VietQR (a different rail)
-    override fun supportsCardlessAtm()        = true
-    override fun supportsBilingualReceipt()   = false
-}
-```
-
-The UI in `:features` reads these flags and renders accordingly — never branching on `variantId`.
-
-**`BeneficiaryValidator`**
-
-```kotlin
-// :variants-kh
-internal class KhBeneficiaryValidator : BeneficiaryValidator {
-    private val accountRegex = Regex("""^\d{9}$""")
-    private val phoneRegex   = Regex("""^(?:\+855|0)\d{8,9}$""")
-    override fun validateAccountNumber(account: String) =
-        if (accountRegex.matches(account)) ValidationResult.Valid
-        else ValidationResult.Invalid("Account must be 9 digits")
-    override fun validatePhoneNumber(phone: String) =
-        if (phoneRegex.matches(phone)) ValidationResult.Valid
-        else ValidationResult.Invalid("Use +855 or 0 prefix")
-}
-
-// :variants-vn
-internal class VnBeneficiaryValidator : BeneficiaryValidator {
-    private val accountRegex = Regex("""^\d{8,16}$""")                // VN bank accounts: 8–16 digits
-    private val phoneRegex   = Regex("""^(?:\+84|0)\d{9,10}$""")
-    override fun validateAccountNumber(account: String) =
-        if (accountRegex.matches(account)) ValidationResult.Valid
-        else ValidationResult.Invalid("Số tài khoản 8–16 chữ số")
-    override fun validatePhoneNumber(phone: String) =
-        if (phoneRegex.matches(phone)) ValidationResult.Valid
-        else ValidationResult.Invalid("Dùng +84 hoặc 0 ở đầu")
-}
-```
-
-**`AmountFormatter`**
-
-```kotlin
-// :variants-kh
-internal class KhrAmountFormatter : AmountFormatter {
-    override fun format(amount: Money): String =
-        "%,.0f៛".format(amount.value)            // "1,234,567៛" — symbol suffix, no decimals
-}
-
-// :variants-vn
-internal class VndAmountFormatter : AmountFormatter {
-    override fun format(amount: Money): String =
-        "%,.0f₫".format(amount.value)            // "1.234.567₫" — Vietnamese grouping
-}
-```
-
-**`SupportContacts`**
-
-```kotlin
-// :variants-kh
-internal class KhSupportContacts : SupportContacts {
-    override val customerCarePhone = "+855 23 999 999"
-    override val customerCareEmail = "support.kh@compass.bank"
-    override val customerCareHours = "Mon–Fri, 8 AM – 8 PM (ICT)"
-}
-
-// :variants-vn
-internal class VnSupportContacts : SupportContacts {
-    override val customerCarePhone = "+84 24 7300 8000"
-    override val customerCareEmail = "support.vn@compass.bank"
-    override val customerCareHours = "Mon–Sat, 8 AM – 9 PM (ICT)"
-}
-```
-
-**Total file count per variant:** ~10–12 small files, each implementing one interface. Most are 5–30 lines. The "boilerplate" is the **package layout** (`policy/`, `format/`, `capability/`, `support/`, `di/`) and the Hilt module shape — **copy from an existing variant when scaffolding** (see [13 — Onboarding a Variant § 1.1](13-onboarding-a-variant.md)).
+Run with `./gradlew :tenants:cambodia:base:test`. No Hilt, no Android runtime, no test fixtures.
 
 ---
 
 ## 6. The Hilt Binding Module
 
-Each variant exposes **exactly one** Hilt module that contributes its policy implementations into `LoggedInComponent`. Because every variant binds the same set of `:core` policy interfaces, Dagger would error on duplicate bindings if we used plain `@Binds`. The fix: **Dagger multibindings** keyed on `VariantId`. Each binding goes into a `Map<String, T>`; a small resolver in `:app` looks up the active variant's entry at runtime.
+Each **concrete tenant** exposes **exactly one** Hilt module that declares `@IntoMap @TenantKey("<region>:<tenantSlug>")` bindings for every `:core` policy interface its tenant needs.
 
 ### 6.1 The map key (defined in `:core`)
 
 ```kotlin
-// :core/scope/VariantKey.kt
+// :core/scope/TenantKey.kt
 @MapKey
 @Retention(AnnotationRetention.RUNTIME)
-annotation class VariantKey(val value: String)
+annotation class TenantKey(val value: String)
 ```
 
-Lives in `:core` so every variant module and `:app` can use it without cross-module imports.
+Lives in `:core` so every tenant module and `:app` can use it without cross-module imports.
 
-### 6.2 Per-variant Hilt module
+### 6.2 Per-tenant Hilt module (concrete-rebinds-everything pattern)
 
-Each variant's bindings are added with `@IntoMap @VariantKey("<id>")`:
+Each concrete tenant declares the full set of bindings — reusing region-base implementation classes where the regional baseline applies, supplying overrides where it doesn't.
 
 ```kotlin
-// :variants-kh/di/KhVariantModule.kt
+// :tenants:cambodia:nh/di/NhKhTenantModule.kt
 @Module
 @InstallIn(LoggedInComponent::class)
-abstract class KhVariantModule {
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun amountPolicy(impl: KhTransferAmountPolicy): TransferAmountPolicy
+abstract class NhKhTenantModule {
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun loanEligibility(impl: KhDefaultLoanEligibilityPolicy): LoanEligibilityPolicy   // reuses base
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun feeCalc(impl: KhFeeCalculator): FeeCalculator
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun otpDelivery(impl: KhOtpDeliveryPolicy): OtpDeliveryPolicy                       // reuses base
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun amountFormatter(impl: KhrAmountFormatter): AmountFormatter
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun amountFormatter(impl: KhrAmountFormatter): AmountFormatter                     // reuses base
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun capabilities(impl: KhCapabilities): VariantCapabilities
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun businessCalendar(impl: KhBusinessCalendar): BusinessCalendar                   // reuses base
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun beneficiaryValidator(impl: KhBeneficiaryValidator): BeneficiaryValidator
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun staffIdValidator(impl: NhKhStaffIdValidator): StaffIdValidator                 // overrides
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun otpDelivery(impl: KhOtpDeliveryPolicy): OtpDeliveryPolicy
+    @Binds @IntoMap @TenantKey("cambodia:nh") @LoggedInScoped
+    abstract fun supportContacts(impl: NhKhSupportContacts): SupportContacts                    // overrides
 
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun supportContacts(impl: KhSupportContacts): SupportContacts
-
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun complianceThresholds(impl: KhComplianceThresholds): ComplianceThresholds
-
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun businessCalendar(impl: KhBusinessCalendar): BusinessCalendar
-
-    @Binds @IntoMap @VariantKey("kh") @LoggedInScoped
-    abstract fun receiptRenderer(impl: KhReceiptRenderer): ReceiptRenderer
+    // … one @IntoMap binding per :core policy interface
 }
 ```
 
-`:variants-vn/di/VnVariantModule.kt` follows the identical pattern with `@VariantKey("vn")`. Same for every variant.
+**Trade-off:** the concrete-rebinds-everything pattern means each tenant module declares the full set of `@TenantKey` bindings. Boilerplate cost; the gain is no custom chain-walking resolver and no surprises at runtime. Recommended for v1; revisit if tenant count grows past ~10.
+
+`@InstallIn(LoggedInComponent::class)` plus `@IntoMap @TenantKey("cambodia:nh")` is what makes Hilt aggregate this tenant's bindings into the `Map<String, T>` for each policy interface. **No edit to `:app` is required to register the module** — Hilt's annotation processor finds it automatically.
 
 ### 6.3 The resolver in `:app`
 
-`:app` provides one resolver per `:core` policy interface — each picks the active impl from the multibindings map by `VariantContext.id`:
+`:app` provides one resolver per `:core` policy interface — each picks the active impl from the multibindings map by `TenantContext.id.value`:
 
 ```kotlin
-// :app/di/VariantResolverModule.kt
+// :app/di/TenantResolverModule.kt
 @Module
 @InstallIn(LoggedInComponent::class)
-object VariantResolverModule {
+object TenantResolverModule {
 
     @Provides @LoggedInScoped
-    fun transferAmountPolicy(
-        variant: VariantContext,
-        all: Map<String, @JvmSuppressWildcards TransferAmountPolicy>,
-    ): TransferAmountPolicy = checkNotNull(all[variant.id.value]) {
-        "No TransferAmountPolicy registered for variant ${variant.id}"
+    fun loanEligibilityPolicy(
+        tenant: TenantContext,
+        all: Map<String, @JvmSuppressWildcards LoanEligibilityPolicy>,
+    ): LoanEligibilityPolicy = checkNotNull(all[tenant.id.value]) {
+        "No LoanEligibilityPolicy registered for tenant ${tenant.id}"
     }
 
     @Provides @LoggedInScoped
-    fun feeCalculator(
-        variant: VariantContext,
-        all: Map<String, @JvmSuppressWildcards FeeCalculator>,
-    ): FeeCalculator = checkNotNull(all[variant.id.value]) {
-        "No FeeCalculator registered for variant ${variant.id}"
+    fun otpDeliveryPolicy(
+        tenant: TenantContext,
+        all: Map<String, @JvmSuppressWildcards OtpDeliveryPolicy>,
+    ): OtpDeliveryPolicy = checkNotNull(all[tenant.id.value]) {
+        "No OtpDeliveryPolicy registered for tenant ${tenant.id}"
     }
 
     // … one provider per :core policy interface (mechanical; ~10 entries)
 }
 ```
 
-The map lookup is the **single point of dispatch** in the codebase — no `when (variantId)` branching in `:features`, `:data`, or any variant module. Adding a new variant doesn't change `VariantResolverModule`; Hilt automatically adds the new variant's `@IntoMap` entries to each map.
+The map lookup is the **single point of dispatch** in the codebase — no `when (tenant.id)` branching in `:features`, `:data`, or any tenant module. Adding a new tenant doesn't change `TenantResolverModule`; Hilt automatically adds the new tenant's `@IntoMap` entries to each map.
 
 ### 6.4 What this looks like at compile time
 
 ```
-KhVariantModule:    @IntoMap @VariantKey("kh")   ──┐
-VnVariantModule:    @IntoMap @VariantKey("vn")   ──┤  Map<String, TransferAmountPolicy>
-PpcVariantModule:   @IntoMap @VariantKey("ppc")  ──┤   { "kh" → KhTransferAmountPolicy,
-                                                       "vn" → VnTransferAmountPolicy,
-                                                       "ppc" → PpcTransferAmountPolicy }
-                                                          │
-                                                          ↓
-                                             VariantResolverModule (in :app)
-                                             picks one by VariantContext.id.value
-                                                          ↓
-                                     :features ViewModels see ONE TransferAmountPolicy
-                                     (the active variant's), via Hilt — Logic-Blind.
+NhKhTenantModule:         @IntoMap @TenantKey("cambodia:nh")     ──┐
+KhDefaultTenantModule:    @IntoMap @TenantKey("cambodia:default") ──┤  Map<String, LoanEligibilityPolicy>
+NhKrTenantModule:         @IntoMap @TenantKey("korea:nh")          ──┤   { "cambodia:nh"      → KhDefaultLoanEligibilityPolicy,
+ShinsegaeTenantModule:    @IntoMap @TenantKey("korea:shinsegae")   ──┤     "cambodia:default" → KhDefaultLoanEligibilityPolicy,
+                                                                       "korea:nh"          → KrDefaultLoanEligibilityPolicy,
+                                                                       "korea:shinsegae"   → KrDefaultLoanEligibilityPolicy }
+                                                                          │
+                                                                          ↓
+                                                            TenantResolverModule (in :app)
+                                                            picks one by TenantContext.id.value
+                                                                          ↓
+                                          :features ViewModels see ONE LoanEligibilityPolicy
+                                          (the active tenant's), via Hilt — Logic-Blind.
 ```
 
-There is no compile error from "multiple bindings for `TransferAmountPolicy`" because each binding goes into the map under a unique key. Dagger generates the maps; the resolver picks; the consumer never knows.
+There is no compile error from "multiple bindings for `LoanEligibilityPolicy`" because each binding goes into the map under a unique key. Dagger generates the maps; the resolver picks; the consumer never knows.
 
-> **Note on multiple variants in one APK:** every variant's Hilt module compiles into the binary. Only the entries matching the logged-in user's `variantId` are *exercised*; the others sit inert in the maps. This keeps `:features` Logic-Blind and onboarding additive. The cost is a slightly larger APK; the benefit is no per-variant `:app` change. See [13 — Onboarding](13-onboarding-a-variant.md).
+> **Note on multiple tenants in one APK:** every tenant's Hilt module compiles into the binary. Only the entries matching the logged-in user's `tenantId` are *exercised*; the others sit inert in the maps. This keeps `:features` Logic-Blind and onboarding additive. The cost is a slightly larger APK; the benefit is no per-tenant `:app` change. See [13 — Onboarding](13-onboarding-a-variant.md).
 
 ---
 
@@ -649,79 +350,82 @@ There is no compile error from "multiple bindings for `TransferAmountPolicy`" be
 
 The build graph enforces:
 
-- ❌ `:variants-kh` cannot import `:variants-vn` (no shared symbols across variants)
-- ❌ `:variants-*` cannot import `:features` (logic must not reach into UI)
-- ❌ `:variants-*` cannot import `:data` (variants contribute policies, not data plumbing)
-- ✅ `:variants-*` may import `:core` (contracts) and `:aos-core` (infrastructure helpers)
+- ❌ `:tenants:{regionA}:{tenantX}` cannot import `:tenants:{regionA}:{tenantY}` (no cross-tenant coupling within a region)
+- ❌ `:tenants:{regionA}:*` cannot import `:tenants:{regionB}:*` (no cross-region coupling at any level)
+- ❌ Region-base modules cannot import each other (`:tenants:cambodia:base` ↛ `:tenants:korea:base`). If shared policy is genuinely cross-regional, promote to `:core`.
+- ❌ `:tenants:*:*` cannot import `:features`, `:data`, `:design-system`
+- ✅ Concrete tenant modules **must** declare Gradle dependency on their own region base (`:tenants:cambodia:nh` → `:tenants:cambodia:base`)
+- ✅ `:tenants:*:*` may import `:core` (contracts) and `:aos-sdk` (infrastructure helpers)
 
-A bug in `KhFeeCalculator` cannot, by construction, reach `:variants-vn`. CI verifies this by failing any PR whose variant module declares a forbidden dependency.
+A bug in a Cambodia tenant cannot, by construction, reach a Korea tenant. CI verifies this by failing any PR whose tenant module declares a forbidden dependency.
 
 ---
 
-## 8. End-to-end Example: A Transfer Submit
+## 8. End-to-end Example: A Loan Application Submit
 
-The path from user tap to network call shows where `:variants-*` plugs in:
+The path from user tap to network call shows where `:tenants:*` plugs in:
 
 ```
 [User taps Submit]
         │
         ▼
-:features (UI)        TransferInputScreen → TransferInputViewModel
+:features (UI)        LoanApplyScreen → LoanApplyViewModel
                           │
-                          │  amountPolicy.validate(amount)        ── from :variants-{active}
-                          │  feeCalculator.quote(amount, channel) ── from :variants-{active}
-                          │  if (validationResult is Valid) →
-                          │  transferRepo.submit(intent)
+                          │  eligibilityPolicy.validate(applicant)    ── from :tenants:{active}
+                          │  emiCalculator.compute(amount, term, rate) ── from :tenants:{active}
+                          │  if (validation is Valid) →
+                          │  loanRepo.submit(application)
                           ▼
-:core (interfaces)    TransferAmountPolicy, FeeCalculator, TransferRepository
+:core (interfaces)    LoanEligibilityPolicy, EmiCalculator, LoanRepository
                           │
                           │  (resolved by Hilt to active impls)
                           ▼
-:variants-kh          KhTransferAmountPolicy, KhFeeCalculator
-:data                 FintechTransferRepo : TransferRepository
-                          │  api.submitTransfer(req).toDomain()
+:tenants:cambodia:nh   (depends on :tenants:cambodia:base)
+                       KhDefaultLoanEligibilityPolicy, NhKhStaffIdValidator
+:data                  LoanRepo : LoanRepository
+                          │  api.submitLoanApplication(req).toDomain()
                           ▼
-:aos-core (infra)     RetrofitFactory + BaseUrlInterceptor + AccountIdInterceptor
-                          │  HTTP POST {RuntimeConfig.urls.main}/v1/transfer/submit
+:aos-sdk (infra)      RetrofitFactory + BaseUrlInterceptor + AccountIdInterceptor
+                          │  HTTP POST {RuntimeConfig.urls.main}/v1/loans/apply
                           │       Authorization: Bearer ...
                           │       X-Account-Id: <session.activeAccountId>
                           ▼
-                      [Unified fintech backend; demuxes to the right rail per user]
+                      [Unified fintech backend; demuxes per user]
 ```
 
 The ViewModel only knows interfaces. Hilt resolves:
-- `KhTransferAmountPolicy` because the user's `variantId == "kh"` was bound into `LoggedInComponent` at login.
-- `FintechTransferRepo` because `:data` is the only repo provider — same for every variant.
+- `KhDefaultLoanEligibilityPolicy` because the user's `tenantId == "cambodia:nh"` was bound into `LoggedInComponent` at login.
+- `LoanRepo` because `:data` is the only repo provider — same for every tenant.
 
 → For the boot mechanics: [10 — Boot Phases](10-boot-phases.md).
 
 ---
 
-## 9. When the Variant Has Unique Features
+## 9. When the Tenant Has Unique Features
 
-A variant module holds *only* policies + DI. If a variant introduces a feature that no other variant has — its own API endpoints, its own DTOs, its own screens — that feature does **not** go in `:variants-{id}`. It gets its own dedicated module, mirroring how `:features-chatbot` is structured.
+A tenant module holds *only* policies + DI. If a tenant introduces a feature that no other tenant has — its own API endpoints, its own DTOs, its own screens — that feature does **not** go in `:tenants:{region}:{tenantId}`. It gets its own dedicated module, mirroring how `:features-chatbot` is structured.
 
-### Why not just put the unique feature inside `:variants-{id}`?
+### Why not put the unique feature inside `:tenants:*`?
 
 Four reasons:
 
-1. **The variant module is logic-only.** It depends on `:core` and `:aos-core` only. Adding UI would force a `:design-system` dependency; adding API code would require Retrofit + Moshi setup; adding a Compose screen would require Compose dependencies. The variant module's small, pure shape is what makes it predictable.
-2. **Variant modules are symmetric.** Every variant has the same internal structure (`policy/`, `format/`, `capability/`, `support/`, `di/`). Unique features are **not** symmetric — only some variants have them. Mixing feature code into `:variants-kh` would make variants stop looking alike.
-3. **Capability gating is cleaner with separate modules.** `:app` reads `capabilities.supportsBakongDisputes()` and conditionally includes the `:features-bakong-disputes` nav graph. The flag and the feature module are decoupled. Embedding the feature in the variant module weakens the gate (the code is loaded either way) and conflates "what variant am I" with "what features does this user see."
-4. **Features migrate; variants don't.** If a feature is later supported by another variant (say, VN gets bilingual dispute support), the feature module just gains a new capability-flag setter from `:variants-vn`. No code moves between modules. Embedded in `:variants-kh`, you'd have to extract it first.
+1. **The tenant module is logic-only.** It depends on `:core` and `:aos-sdk` only. Adding UI would force a `:design-system` dependency; adding API code would require Retrofit + Moshi setup; adding a Compose screen would require Compose dependencies. The tenant module's small, pure shape is what makes it predictable.
+2. **Tenant modules are symmetric.** Every concrete tenant has the same internal structure (`policy/`, `format/`, `flags/`, `capability/`, `di/`). Unique features are **not** symmetric — only some tenants have them. Mixing feature code into a tenant module would make tenants stop looking alike.
+3. **Capability gating is cleaner with separate modules.** `:app` reads `capabilities.supportsBakongDisputes()` and conditionally includes the `:features-bakong-disputes` nav graph. The flag and the feature module are decoupled. Embedding the feature in the tenant module weakens the gate (the code is loaded either way) and conflates "what tenant am I" with "what features does this user see."
+4. **Features migrate; tenants don't.** If a feature is later supported by another tenant, the feature module just gains a new capability-flag setter from another tenant. No code moves between modules.
 
 ### Module shape
 
 ```
-:features-bakong-disputes/                    (or :features-kh-bakong-disputes if locked to one variant)
+:features-bakong-disputes/                    (or :features-{tenant}-bakong-disputes if locked to one tenant)
 └── src/main/kotlin/com/<org>/features/bakongdisputes/
     ├── api/
-    │   ├── BakongDisputeApi.kt              # Retrofit, variant-unique endpoints
+    │   ├── BakongDisputeApi.kt              # Retrofit, tenant-unique endpoints
     │   └── dto/
     │       ├── DisputeRequest.kt
     │       └── DisputeResponse.kt
     ├── repo/
-    │   └── BakongDisputeRepo.kt             # may or may not implement a :core interface
+    │   └── BakongDisputeRepo.kt
     ├── screen/
     │   ├── DisputeListScreen.kt
     │   ├── DisputeDetailScreen.kt
@@ -730,15 +434,15 @@ Four reasons:
         └── BakongDisputesModule.kt          # @InstallIn(LoggedInComponent::class)
 ```
 
-Dependencies: `:core`, `:aos-core`, `:design-system` (for `CompassTheme`, `CompassButton`, etc.). Does **not** depend on `:features`.
+Dependencies: `:core`, `:aos-sdk`, `:design-system`. Does **not** depend on `:features`.
 
 ### Capability gating
 
-`:app`'s navigation conditionally includes the feature's nav graph based on a `VariantCapabilities` flag:
+`:app`'s navigation conditionally includes the feature's nav graph based on a `TenantCapabilities` flag:
 
 ```kotlin
 @Composable
-fun AppNavigation(navController: NavHostController, capabilities: VariantCapabilities) {
+fun AppNavigation(navController: NavHostController, capabilities: TenantCapabilities) {
     NavHost(navController, startDestination = Route.Boot) {
         bootNavGraph(navController)
         authNavGraph(navController)
@@ -751,72 +455,74 @@ fun AppNavigation(navController: NavHostController, capabilities: VariantCapabil
 }
 ```
 
-Each variant's `VariantCapabilities` impl returns `true` for the features it supports and `false` for the rest. Variant `kh` returns `true` for `supportsBakongDisputes()`; every other variant returns `false`. The feature's Hilt bindings still install (they're inert when unreachable), but no UI is wired in.
+Each tenant's `TenantCapabilities` impl returns `true` for the features it supports and `false` for the rest. The feature's Hilt bindings still install (they're inert when unreachable), but no UI is wired in.
 
 ### Naming
 
 | Choice | Use when |
 |---|---|
-| `:features-{feature-name}` | Default. Mirrors `:features-chatbot`. The feature *could* one day be supported by another variant. |
-| `:features-{variant}-{feature-name}` | The feature is structurally locked to one variant (e.g., a regulator-mandated flow specific to that market). |
+| `:features-{feature-name}` | Default. Mirrors `:features-chatbot`. The feature *could* one day be supported by another tenant. |
+| `:features-{tenant}-{feature-name}` | The feature is structurally locked to one tenant. |
 
 ### When to extract a feature module vs. keep in `:features`
 
 | Trigger | Action |
 |---|---|
 | Feature has unique heavy SDK dependencies | Extract (same rationale as `:features-chatbot`) |
-| Feature has unique Retrofit endpoints + DTOs that other variants don't share | Extract |
-| Feature differs only in policy/format/visibility | Keep in `:features`, gate via `VariantCapabilities` |
+| Feature has unique Retrofit endpoints + DTOs that other tenants don't share | Extract |
+| Feature differs only in policy/format/visibility | Keep in `:features`, gate via `TenantCapabilities` |
 | Feature differs only in business rule (limit, fee) | Keep in `:features`, supply the rule via a `:core` policy interface |
 
-The threshold mirrors the build-perf heuristic from [14](14-build-performance.md): if a variant-unique feature would slow incremental builds for everyone else, isolate it.
+The threshold mirrors the build-perf heuristic from [14](14-build-performance.md): if a tenant-unique feature would slow incremental builds for everyone else, isolate it.
 
-### Variants stay isolated from these feature modules
+### Tenants stay isolated from these feature modules
 
-`:variants-kh` does **not** depend on `:features-bakong-disputes`. The connection is one-way:
+`:tenants:cambodia:nh` does **not** depend on `:features-bakong-disputes`. The connection is one-way:
 
-- `:variants-kh` provides `KhCapabilities.supportsBakongDisputes() = true` via its `VariantCapabilities` impl.
+- `:tenants:cambodia:nh` provides `NhKhCapabilities.supportsBakongDisputes() = true` via its `TenantCapabilities` impl.
 - `:features-bakong-disputes` installs its own Hilt bindings into `LoggedInComponent`.
 - `:app` reads the capability flag and conditionally wires the nav graph.
 
-No cross-edge between `:variants-kh` and `:features-bakong-disputes`. They communicate through `:core` and `:app`.
+No cross-edge between `:tenants:cambodia:nh` and `:features-bakong-disputes`. They communicate through `:core` and `:app`.
 
 ---
 
-## 10. What Does NOT Go In `:variants-*`
+## 10. What Does NOT Go In `:tenants:*`
 
 | ❌ Doesn't belong | ✅ Goes in |
 |---|---|
-| Compose UI | `:features` |
-| Retrofit interfaces or DTOs | `:data` (and there's only one — `FintechApi`) |
+| Compose UI | `:features` or a `:features-{name}` sibling module |
+| Retrofit interfaces or DTOs | `:data` |
 | Repository implementations | `:data` |
-| Domain models shared across variants | `:core` |
-| `OkHttpClient` configuration | `:aos-core` |
-| References to other variant modules | nowhere |
+| Domain models shared across tenants | `:core` |
+| `OkHttpClient` configuration | `:aos-sdk` |
+| References to other tenant modules (within or across regions) | nowhere |
+| References to other region-base modules | nowhere — promote shared policy to `:core` if truly needed |
 | MG endpoint URL | `:app` (build-time) |
+| User-facing display strings | `strings.xml` resources in `:design-system` or the consuming `:features` module |
 
-If two variants need the same logic, **promote it to `:core`** (if it's a contract) or duplicate it deliberately (if it's an implementation detail that might diverge later). Premature consolidation across variants is how isolation erodes.
+If two tenants need the same logic, **either promote it to the region base** (if it's regulator-wide) **or promote it to `:core`** (if it's a contract every region defines independently). Premature consolidation across tenants is how isolation erodes.
 
 ---
 
 ## 11. The `:features-chatbot` Sibling
 
-`:features-chatbot` is **not a variant** — it's an isolated UI feature, sibling to `:features`. It exists because heavy SDKs (chat NLP, voice) penalize incremental builds of unrelated features. Its dependency rules:
+`:features-chatbot` is **not a tenant** — it's an isolated UI feature, sibling to `:features`. It exists because heavy SDKs (chat NLP, voice) penalize incremental builds of unrelated features. Its dependency rules:
 
-- Depends on: `:core`, `:aos-core`, `:design-system`
+- Depends on: `:core`, `:aos-sdk`, `:design-system`
 - Does **not** depend on: `:features` (no cross-imports)
 - Depended on by: `:app` (via navigation entry point)
 
-Treat `:features-chatbot` as the prototype for **"isolate when SDK weight justifies it"**. New isolated features (e.g., `:features-kyc-livecheck`, `:features-card-3ds`) follow the same pattern.
+Treat `:features-chatbot` as the prototype for **"isolate when SDK weight justifies it"**. Concrete new sibling modules follow the same pattern: `:features-kyc` (CameraX + ML Kit weight), `:features-support-chat` (Sendbird SDK weight), `:features-branch-locator` (Google Maps weight).
 
 ---
 
 ## 12. Cross-references
 
-- Variants vs **tenants** (customer-org boundaries *inside* a variant): [19 — Tenants and Variants](19-tenants-and-variants.md)
-- The interfaces variants implement: [03 — `:core`](03-core.md)
-- The repos that handle the API side (variant-agnostic): [05 — `:data`](05-data.md)
-- The shared design system that variant-unique features consume: [04 — `:design-system`](04-design-system.md)
-- How `:app` wires variants at boot: [08 — `:app`](08-app-orchestrator.md)
+- The tenant behavioral model (`TenantContext`, flags, params, escalation): [19 — Tenants and Regions](19-tenants-and-variants.md)
+- The interfaces tenants and region bases implement: [03 — `:core`](03-core.md)
+- The repos that handle the API side (tenant-agnostic): [05 — `:data`](05-data.md)
+- The shared design system that tenant-unique features consume: [04 — `:design-system`](04-design-system.md)
+- How `:app` wires tenants at boot: [08 — `:app`](08-app-orchestrator.md)
 - The `LoggedInComponent` mechanism: [10 — Boot Phases](10-boot-phases.md)
-- Onboarding a new variant: [13 — Onboarding a Variant](13-onboarding-a-variant.md)
+- Onboarding a tenant or region: [13 — Onboarding a Tenant](13-onboarding-a-variant.md)

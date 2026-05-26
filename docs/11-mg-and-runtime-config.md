@@ -71,9 +71,10 @@ data class StoreReviewMode(
 | MG returns | MG does NOT return |
 |---|---|
 | Main API base URL(s) | Feature flags (use Firebase Remote Config or similar) |
-| Maintenance state + message | Variant-specific branding tokens (logos, colors) |
+| Maintenance state + message | Tenant-specific branding tokens (logos, colors) |
 | Force-update floor + store link | User-specific data (auth happens later) |
-| Auxiliary URLs (analytics, push, etc.) | The user's variant ID (that comes from `AuthRepository.login`) |
+| Auxiliary URLs (analytics, push, etc.) | The user's tenant ID (that comes from `AuthRepository.login`) |
+| Third-party SDK app-ids (Sendbird, Google Maps) | Per-user permissions or feature flags (use Firebase Remote Config) |
 
 Keeping MG narrow means:
 
@@ -144,10 +145,10 @@ internal data class RuntimeConfigDto(
 
 ## 4. The `BaseUrlInterceptor` Bridge
 
-Once `RuntimeConfig` is committed, every Retrofit call routed through `:aos-core`'s OkHttp client gets its base URL rewritten:
+Once `RuntimeConfig` is committed, every Retrofit call routed through `:aos-sdk`'s OkHttp client gets its base URL rewritten:
 
 ```kotlin
-// :aos-core/network/BaseUrlInterceptor.kt
+// :aos-sdk/network/BaseUrlInterceptor.kt
 class BaseUrlInterceptor(private val provider: BaseUrlProvider) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -230,7 +231,7 @@ Some features must ship in a build that's already on the Play Console review tra
 // :features/<feature>/SomeViewModel.kt
 class SomeViewModel @Inject constructor(
     private val runtimeConfig: RuntimeConfigStore,
-    private val capabilities: VariantCapabilities,
+    private val capabilities: TenantCapabilities,
 ) : MviViewModel<…>() {
 
     private val srm           = runtimeConfig.current().storeReviewMode
@@ -259,7 +260,7 @@ After GA, MG flips `enabled = true` for the production segment (or the code-side
 | ❌ Not the place for | ✅ Goes elsewhere |
 |---|---|
 | General feature flags (toggle existing features for A/B) | Firebase Remote Config or similar |
-| Per-variant capability gating | `VariantCapabilities` in `:core/policy/` |
+| Per-tenant capability gating | `TenantCapabilities` in `:core/policy/` |
 | Tenant-specific permission gating | Server-returned permission set on `Session` |
 | Hiding bugs in production | Fix the bug |
 
@@ -267,17 +268,20 @@ After GA, MG flips `enabled = true` for the production segment (or the code-side
 
 ---
 
-## 7. Failure Modes
+## 7. Failure Modes and Stale-Config Fallback
 
 | What goes wrong | What happens |
 |---|---|
-| MG endpoint unreachable | `BootCoordinator` shows a "can't reach servers" screen with retry. No login allowed. |
-| MG returns malformed JSON | Same as above. Logged at `ERROR` to Crashlytics. |
+| MG endpoint unreachable (transient) | `BootCoordinator` waits 3–5s, then falls back to the **last-known-good `RuntimeConfig` cached locally** (≤24h since last successful MG fetch). App proceeds with a non-blocking banner: "Using last known configuration. Some features may be out of date." Background WorkManager retries MG every 15 minutes until success, then refreshes config and dismisses banner. A non-fatal Crashlytics event is emitted when the fallback activates. |
+| MG endpoint unreachable AND cache stale (>24h or missing) | `BootCoordinator` shows a "can't reach servers" screen with retry. No login allowed. This is the hard-fail mode. |
+| MG returns malformed JSON | Hard-fail with retry. Logged at `ERROR` to Crashlytics. |
 | MG returns a URL that doesn't exist | Login attempts fail with a generic network error; no automatic re-fetch of MG. |
-| Cert pin fails on MG | Same as MG unreachable — no login. |
+| Cert pin fails on MG | Same as MG unreachable — fall through to cached config if available. |
 | App version below `minimumVersionCode` | `ForceUpdateGate`. User can only open the store. |
 
-There is **no fallback** to a hardcoded set of URLs if MG fails. Stale URLs in production are worse than a "can't connect" screen — silent fallbacks have shipped charges to wrong endpoints in past systems. The framework deliberately blocks rather than guesses.
+The stale-config fallback exists because a loan customer checking their repayment schedule should not see a "service unavailable" screen because of an unrelated MG outage. **Hardcoded fallback URLs remain forbidden** — what's cached is a `RuntimeConfig` that was *previously* served by MG; the binary still does not ship a `production.json`.
+
+The `staleConfigTtl` (default 24h) is the **one** allowed BuildConfig constant beyond `MG_URL` — it bootstraps the fallback before MG is reachable. Both are per-build-type values.
 
 ---
 
@@ -285,5 +289,5 @@ There is **no fallback** to a hardcoded set of URLs if MG fails. Stale URLs in p
 
 - Where the MG fetch sits in the boot sequence: [10 — Boot Phases](10-boot-phases.md)
 - Where the MG URL constant is defined: [08 — `:app`](08-app-orchestrator.md)
-- The `:aos-core` interceptor that consumes the URLs: [02 — `:aos-core`](02-aos-core.md)
+- The `:aos-sdk` interceptor that consumes the URLs: [02 — `:aos-sdk`](02-aos-core.md)
 - The `:data` module that builds `FintechApi` against `RuntimeConfig.urls.main`: [05 — `:data`](05-data.md)

@@ -1,46 +1,50 @@
-# 19 · Tenants and Variants
+# 19 · Tenants and Regions
 
-> **Why this doc exists:** Real-world multi-region fintech has two axes of "differs per customer", not one. The framework collapses them at its peril. This doc gives each axis a name, a place to live, and a discipline for telling them apart.
+> **Why this doc exists:** Real-world multi-customer fintech needs to flex along two pressures — different regulators/regions, and different customer organizations inside those regions. The framework handles this with **a single DI axis (tenant) plus a Gradle module hierarchy (region)**. One axis to dispatch on; the region grouping is structural. This doc gives each shape a name, a place to live, and a discipline for telling them apart.
+
+> **Historical note:** earlier iterations of this framework documented two parallel DI axes (variant + tenant). That model has been collapsed. Region is no longer a runtime DI axis — it's expressed as Gradle module dependency. See §11 for the rationale.
 
 ---
 
-## 1. Two axes, not one
+## 1. One axis, with a regional hierarchy
 
 ```
-                              region / regulator boundary
-                              ───────────────────────────
-                              KH (Cambodia)   VN (Vietnam)   KR (Korea)
-                              :variants-kh    :variants-vn   :variants-kr
-   customer-org boundary       ─────────────  ─────────────  ─────────────
-   ───────────────────────────
-   default (single tenant)        ●               ●            ●
-   posco-ict                                                   ●
-   itcen                                                       ●
-   lotte                                                       ●
-   nia                                                         ●
-   shinsegae                                                   ●
-   wips                                                        ●
-   ...                                                         ●
+                                  region (Gradle hierarchy, NOT a DI axis)
+                                  ──────────────────────────────────────
+                                  cambodia              korea
+                                  :tenants:cambodia:    :tenants:korea:
+   tenant (the only DI axis)      ──────────────────    ──────────────────
+   ─────────────────────────
+   base (shared region policy)         ●                     ●
+   default                             ●                     ●
+   nh                                  ●                     ●
+   posco-ict                                                 ●
+   itcen                                                     ●
+   lotte                                                     ●
+   nia                                                       ●
+   shinsegae                                                 ●
+   wips                                                      ●
 ```
 
-| Axis | Compass term | What differs | Lifetime | Bound where |
+| Shape | Compass term | What differs | Lifetime | Bound where |
 |---|---|---|---|---|
-| **Region / regulator** | **Variant** | Currency, rails, compliance thresholds, holiday calendar, OTP channel, KYC requirements | Per login; doesn't change without logout | `:variants-{region}/` module |
-| **Customer org inside a region** | **Tenant** | Field visibility, label strings, employee-ID format, approval-line shape, footer text | Per login; doesn't change without logout | `TenantContext` carried in `Session`; defaults inside `:variants-{region}/tenants/` |
-| **Account inside an org** | `DepartmentAccount` | Active account ID stamped on requests | Switchable any time inside one session | `Session.activeAccountId: StateFlow` (see [12](12-departments-and-session.md)) |
+| **Region** | (Gradle hierarchy) | Currency, rails, compliance thresholds, holiday calendar, OTP channel mandated by regulator, regional KYC requirements | Per login; doesn't change without logout | `:tenants:{region}:base` Gradle module — concrete tenants depend on it |
+| **Tenant** | **Tenant** (the only DI axis) | Field visibility, label strings, employee-ID format, approval-line shape, footer text, per-org capability toggles. Plus regional baseline overrides. | Per login; doesn't change without logout | `TenantContext` carried in `Session`; concrete impls inside `:tenants:{region}:{tenantId}/` |
+| **Account inside a tenant** | `DepartmentAccount` | Active account ID stamped on requests | Switchable any time inside one session | `Session.activeAccountId: StateFlow` (see [12](12-departments-and-session.md)) |
 
-Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different change frequency and a different binding mechanism.
+**Two nested concepts: Tenant ⊃ Account.** Region appears in the diagram but is NOT a runtime DI dimension — it's how tenants are organized on disk and how shared policies are reused.
 
 ---
 
-## 2. When something is a variant vs a tenant
+## 2. When a difference is region-baseline vs tenant-override
 
-| Question | If "yes" → it's a **variant** | If "yes" → it's a **tenant** |
+| Question | If "yes" → it goes in **`:tenants:{region}:base`** | If "yes" → it goes in **`:tenants:{region}:{tenantId}/`** |
 |---|---|---|
 | Different currency / settlement rail? | ✓ | |
 | Different regulator (NBC vs SBV vs FSS)? | ✓ | |
 | Different KYC body / compliance limits? | ✓ | |
 | Different OTP channel mandated by law? | ✓ | |
+| Different regional holiday calendar? | ✓ | |
 | Different fee tiering? | usually | rarely |
 | Different label text / footer / disclosure language? | possibly | usually |
 | Hides or shows a field on a screen? | rarely | usually |
@@ -48,56 +52,66 @@ Three nested concepts. **Variant ⊃ Tenant ⊃ Account.** Each has a different 
 | Different employee-ID format / regex? | rarely | usually |
 | Different per-org capability toggle? | | ✓ |
 
-**Rule of thumb:** If a Korean regulator change rolls out across every customer in Korea uniformly, the difference belongs in the **variant**. If a single customer org needs the change while the rest of Korea doesn't, it belongs in the **tenant**.
+**Rule of thumb:** if a regulator change rolls out across every tenant in the region uniformly, the difference belongs in the **region base**. If a single tenant org needs the change while the rest of the region doesn't, it belongs in the **concrete tenant**.
 
 ---
 
 ## 3. Module Placement
 
 ```
-:variants-kr/                                          ← regulator/region boundary
-├── policy/                                             (variant-level: NBC fees, KRW format,
-│   ├── KrFeeCalculator.kt                                  Korean OTP rules, …)
-│   ├── KrwAmountFormatter.kt
-│   └── KrComplianceThresholds.kt
-├── capability/
-│   └── KrCapabilities.kt
-├── tenants/                                           ← tenant directory
-│   ├── default/
-│   │   ├── DefaultTenantProfile.kt                    (TenantContext factory: flags+params)
-│   │   └── DefaultApprovalLineRenderer.kt             (structural impl when params aren't enough)
-│   ├── nia/
-│   │   └── NiaTenantProfile.kt
-│   ├── posco_ict/
-│   │   └── PoscoIctTenantProfile.kt
-│   ├── shinsegae/
-│   │   ├── ShinsegaeTenantProfile.kt
-│   │   └── ShinsegaeApprovalLineRenderer.kt           (structural — different layout)
-│   └── wips/
-│       └── WipsTenantProfile.kt
-└── di/
-    ├── KrVariantModule.kt                             (variant-level Hilt bindings)
-    └── KrTenantModule.kt                              (tenant @IntoMap dispatch within :variants-kr)
+:tenants/
+└── korea/
+    ├── base/                                             ← region baseline (Gradle module)
+    │   └── src/main/kotlin/com/<org>/tenants/korea/base/
+    │       ├── policy/
+    │       │   ├── KrDefaultFeeCalculator.kt             (regulator-wide KR rules)
+    │       │   ├── KrwAmountFormatter.kt
+    │       │   ├── KrComplianceThresholds.kt
+    │       │   ├── KrOtpDeliveryPolicy.kt
+    │       │   └── KrBusinessCalendar.kt
+    │       └── capability/
+    │           └── KrBaseCapabilities.kt                 (KR-baseline flags concrete tenants can inherit)
+    ├── default/                                          ← empty/sentinel tenant
+    │   └── di/
+    │       └── KrDefaultTenantModule.kt                  (@TenantKey("korea:default") bindings, all reusing base)
+    ├── nh/                                               ← concrete tenant
+    │   ├── policy/
+    │   │   └── NhKhKycRequirementPolicy.kt               (overrides KR baseline)
+    │   ├── flags/
+    │   │   └── NhTenantProfile.kt                        (TenantContext factory: flags + params)
+    │   └── di/
+    │       └── NhTenantModule.kt                         (@TenantKey("korea:nh") bindings)
+    └── shinsegae/                                        ← concrete tenant with structural escalation
+        ├── policy/
+        │   └── ShinsegaeApprovalLineRenderer.kt          (structural — different layout from KR baseline)
+        ├── flags/
+        │   └── ShinsegaeTenantProfile.kt
+        └── di/
+            └── ShinsegaeTenantModule.kt                  (@TenantKey("korea:shinsegae") bindings)
 ```
 
-A tenant is **a directory inside its parent variant**, not a sibling module. Reason: a tenant only makes sense in the regulatory context of its variant. A customer who operates across two markets has two tenant entries (one per variant), with separate IDs and independent profiles.
+**Each concrete tenant module declares Gradle dependency on its region base.** Hilt sees the union of bindings; concrete-tenant bindings win on conflict via standard `@Binds` precedence within the per-tenant map slot.
+
+**A tenant exists inside one region.** A customer who operates across two regions has two tenant entries — `:tenants:cambodia:nh` and `:tenants:korea:nh` are independent modules with independent profiles, separate Hilt keys, and (usually) different policy impls.
 
 ---
 
 ## 4. `TenantContext` in `:core`
 
-`TenantContext` lives alongside `VariantContext` in `:core/variant/`. Both are immutable snapshots resolved at login.
+`TenantContext` is an immutable snapshot resolved at login.
 
 ```kotlin
-// :core/variant/TenantContext.kt
+// :core/tenant/TenantContext.kt
 data class TenantContext(
     val id: TenantId,
     val displayName: String,
+    val regionCode: String,          // "kh", "kr", … — informational only, NOT used for DI dispatch
+    val defaultCurrency: Currency,
     val flags: TenantFlags,
     val params: TenantParams,
 )
 
-// :core/variant/TenantFlags.kt — explicit, named booleans (NOT a Map<String, Boolean>)
+// :core/tenant/TenantFlags.kt — explicit, named booleans (NOT a Map<String, Boolean>)
 data class TenantFlags(
     val hidesEmployeeId: Boolean = false,
     val clearsEmployeeNumberOnApproval: Boolean = false,
@@ -107,7 +121,7 @@ data class TenantFlags(
     // …grows as new tenants reveal new dimensions; each addition is a :core PR
 )
 
-// :core/variant/TenantParams.kt — explicit, named, typed
+// :core/tenant/TenantParams.kt — explicit, named, typed
 data class TenantParams(
     val employeeIdRegex: String? = null,
     val approvalLineMaxDepth: Int = 5,
@@ -116,9 +130,11 @@ data class TenantParams(
     // …
 )
 
-// :core/variant/TenantId.kt
-@JvmInline value class TenantId(val value: String)
+// :core/tenant/TenantId.kt
+@JvmInline value class TenantId(val value: String)   // composite: "<region>:<tenantSlug>", e.g. "korea:shinsegae"
 ```
+
+**`TenantId.value` is a composite of `<region>:<tenantSlug>`.** The composite makes the same tenant slug unambiguous across regions (e.g., `"cambodia:nh"` vs `"korea:nh"`). `regionCode` is a separate field on `TenantContext` for display and informational use only — **never branch on `regionCode`**, same rule as never branch on `tenant.id`.
 
 **Why named fields, not a `Map<String, Any>`?**
 
@@ -135,13 +151,13 @@ A `Map`-style backdoor is exactly how `DetailConfig.isXxx()` antipatterns return
 
 ## 5. Default: parameterized policies (most cases)
 
-Most tenant variability flows through `TenantContext` consumed by **existing** variant-level policies. No new policy interface; no new variant impl.
+Most tenant variability flows through `TenantContext` consumed by **existing** policies bound at the region-base layer. No new policy interface; no new tenant-specific impl.
 
 ```kotlin
 // :features/receipt/detail/ReceiptDetailViewModel.kt
 class ReceiptDetailViewModel @Inject constructor(
     private val tenant:    TenantContext,
-    private val visibility: ReceiptVisibilityPolicy,  // variant-level
+    private val visibility: ReceiptVisibilityPolicy,  // bound at region-base level
 ) : MviViewModel<…>() {
 
     private val showEmployeeId      = !tenant.flags.hidesEmployeeId
@@ -151,9 +167,9 @@ class ReceiptDetailViewModel @Inject constructor(
 }
 ```
 
-The ViewModel reads **fields**, never `tenant.id`. Same Logic-Blind rule as variants.
+The ViewModel reads **fields**, never `tenant.id` or `tenant.regionCode`. Same Logic-Blind rule that applied to variants applies to tenants.
 
-| Was (BizPlay antipattern) | Now (Compass) |
+| Was (antipattern) | Now (Compass) |
 |---|---|
 | `if (DetailConfig.isNIA()) hideEmployeeId()` (in 12 places) | `if (tenant.flags.hidesEmployeeId) …` (or just bind the flag to `UiState`) |
 | `if (DetailConfig.isWIPS()) ID_NUMBER = ""` (in adapter) | Read `tenant.flags.clearsEmployeeNumberOnApproval` in the VM, pass the cleared model to the adapter |
@@ -165,7 +181,7 @@ A new tenant onboarded with parametric differences adds **one file**: a `TenantP
 
 ## 6. Escalation: structural `TenantPolicy` (when params aren't enough)
 
-Sometimes a tenant's behavior is structurally different — Shinsegae has a fundamentally different approval-line shape, not just different fields. That's the escalation point: a new policy interface in `:core/policy/`, with per-tenant impls inside the variant module.
+Sometimes a tenant's behavior is structurally different — Shinsegae has a fundamentally different approval-line shape, not just different fields. That's the escalation point: a new policy interface in `:core/policy/`, with per-tenant impls inside the tenant module.
 
 ```kotlin
 // :core/policy/ApprovalLineRenderer.kt
@@ -173,14 +189,12 @@ interface ApprovalLineRenderer {
     fun render(line: ApprovalLine, tenant: TenantContext): RenderedApprovalLine
 }
 
-// :variants-kr/tenants/default/DefaultApprovalLineRenderer.kt
-internal class DefaultApprovalLineRenderer : ApprovalLineRenderer { /* standard layout */ }
+// :tenants:korea:base/policy/KrDefaultApprovalLineRenderer.kt
+internal class KrDefaultApprovalLineRenderer : ApprovalLineRenderer { /* standard layout */ }
 
-// :variants-kr/tenants/shinsegae/ShinsegaeApprovalLineRenderer.kt
+// :tenants:korea:shinsegae/policy/ShinsegaeApprovalLineRenderer.kt
 internal class ShinsegaeApprovalLineRenderer : ApprovalLineRenderer { /* Shinsegae layout */ }
 ```
-
-This is exactly the variant escalation pattern — same shape, different scope.
 
 ### Decision table — flag, param, or structural?
 
@@ -190,7 +204,7 @@ This is exactly the variant escalation pattern — same shape, different scope.
 | "Allow values matching regex R" | `TenantParams.xRegex: String` |
 | "Display text Y here" | `TenantParams.yText: String` |
 | "Render this thing entirely differently" | New `:core/policy/` interface + tenant impls |
-| "Different network endpoint" | (Usually) variant, not tenant — escalate to variant |
+| "Different network endpoint" | Region-base policy (regulator concern), not concrete-tenant |
 
 If you're tempted to add a flag like `usesShinsegaeApprovalLine: Boolean`, that's the smell that escalation is correct — the consumer would branch on the flag and produce different UIs, which is structural. Add the interface instead.
 
@@ -202,8 +216,9 @@ If you're tempted to add a flag like `usesShinsegaeApprovalLine: Boolean`, that'
 POST /v1/auth/login (response)
 {
   "userSession":  { … },
-  "variantId":    "kr",
-  "tenantId":     "shinsegae",
+  "tenantId":     "korea:shinsegae",
+  "regionCode":   "kr",
+  "defaultCurrency": "KRW",
   "tenantFlags":  {
     "hidesEmployeeId":                false,
     "clearsEmployeeNumberOnApproval": false,
@@ -220,29 +235,30 @@ POST /v1/auth/login (response)
 }
 ```
 
-`AuthRepository.login` returns a `LoginResponse` carrying both `variantId` and `tenantId`. `BootCoordinator` builds `LoggedInComponent` with both contexts. The defaults defined in `:variants-{region}/tenants/default/` are used if the server returns an unknown tenant — but **only as a hard-failover with a logged error**, not as a silent fallback.
+`AuthRepository.login` returns a `LoginResponse` carrying `tenantId`. `BootCoordinator` builds `LoggedInComponent` with the resolved `TenantContext`. If the server returns a `tenantId` with no matching Hilt binding, **boot fails fast with a clear error** — no silent fallback to a default tenant in production. The `:tenants:{region}:default` module exists for tests and as the no-overrides baseline; production users must always have a real tenant.
 
 ```kotlin
 // :core/model/LoginResponse.kt
 data class LoginResponse(
-    val userSession: UserSession,
-    val variantId:   VariantId,
-    val tenantId:    TenantId,
-    val tenantFlags: TenantFlags,
-    val tenantParams: TenantParams,
-    val accounts:    List<DepartmentAccount>,
+    val userSession:     UserSession,
+    val tenantId:        TenantId,
+    val regionCode:      String,
+    val defaultCurrency: Currency,
+    val tenantFlags:     TenantFlags,
+    val tenantParams:    TenantParams,
+    val accounts:        List<DepartmentAccount>,
 )
 ```
 
-The server is the source of truth for both `flags` and `params`. The framework does **not** ship a hardcoded `flags` table per tenant inside the client — that's the same antipattern as hardcoded URLs.
+The server is the source of truth for `flags` and `params`. The framework does **not** ship a hardcoded `flags` table per tenant inside the client — that's the same antipattern as hardcoded URLs.
 
 > **Why server-sourced flags?** The same reason MG sources URLs at runtime: changing a flag mid-quarter shouldn't require an APK release. The client only needs the *schema* (typed fields in `TenantFlags`); the *values* are server-supplied.
 
 ---
 
-## 8. DI dispatch for structural tenant policies
+## 8. DI dispatch: one map, one resolver, one key
 
-Structural `TenantPolicy` impls bind via Hilt multibindings keyed by `@TenantKey` — same pattern as `@VariantKey`, one level deeper.
+Tenant impls bind via Hilt multibindings keyed by `@TenantKey`. The composite tenant id (`<region>:<tenantSlug>`) is the map key.
 
 ```kotlin
 // :core/scope/TenantKey.kt
@@ -251,25 +267,54 @@ Structural `TenantPolicy` impls bind via Hilt multibindings keyed by `@TenantKey
 annotation class TenantKey(val value: String)
 ```
 
-Per-tenant module entries:
+### Region-base module (provides shared regional policies, keyed by every tenant in the region)
+
+The recommended v1 pattern is **concrete-rebinds-everything**: the region base provides reusable *implementation classes*; each concrete tenant module declares the Hilt `@TenantKey` bindings for its own tenant slug, reusing the base implementation classes where the regional baseline applies and supplying overrides where they don't.
 
 ```kotlin
-// :variants-kr/di/KrTenantModule.kt
+// :tenants:korea:base/policy/KrDefaultOtpDeliveryPolicy.kt  ← class only, no Hilt binding here
+internal class KrDefaultOtpDeliveryPolicy : OtpDeliveryPolicy {
+    override val preferredChannel = OtpChannel.Sms
+    override val codeLength = 6
+    override val expirySeconds = 300
+}
+
+// :tenants:korea:nh/di/NhTenantModule.kt  ← concrete tenant declares all its bindings
 @Module
 @InstallIn(LoggedInComponent::class)
-abstract class KrTenantModule {
+abstract class NhTenantModule {
+    @Binds @IntoMap @TenantKey("korea:nh") @LoggedInScoped
+    abstract fun otpDelivery(impl: KrDefaultOtpDeliveryPolicy): OtpDeliveryPolicy   // reuses base class
 
-    @Binds @IntoMap @TenantKey("default")  @LoggedInScoped
-    abstract fun defaultApproval(impl: DefaultApprovalLineRenderer): ApprovalLineRenderer
+    @Binds @IntoMap @TenantKey("korea:nh") @LoggedInScoped
+    abstract fun approvalLine(impl: KrDefaultApprovalLineRenderer): ApprovalLineRenderer
 
-    @Binds @IntoMap @TenantKey("shinsegae") @LoggedInScoped
-    abstract fun shinsegaeApproval(impl: ShinsegaeApprovalLineRenderer): ApprovalLineRenderer
+    @Binds @IntoMap @TenantKey("korea:nh") @LoggedInScoped
+    abstract fun amountFormatter(impl: KrwAmountFormatter): AmountFormatter
+    // … one binding per :core policy interface
+}
 
-    // …
+// :tenants:korea:shinsegae/di/ShinsegaeTenantModule.kt  ← concrete tenant with override
+@Module
+@InstallIn(LoggedInComponent::class)
+abstract class ShinsegaeTenantModule {
+    @Binds @IntoMap @TenantKey("korea:shinsegae") @LoggedInScoped
+    abstract fun otpDelivery(impl: KrDefaultOtpDeliveryPolicy): OtpDeliveryPolicy   // reuses base
+
+    @Binds @IntoMap @TenantKey("korea:shinsegae") @LoggedInScoped
+    abstract fun approvalLine(impl: ShinsegaeApprovalLineRenderer): ApprovalLineRenderer  // overrides
+
+    @Binds @IntoMap @TenantKey("korea:shinsegae") @LoggedInScoped
+    abstract fun amountFormatter(impl: KrwAmountFormatter): AmountFormatter
+    // … one binding per :core policy interface
 }
 ```
 
-Resolver in `:app` (mirrors `VariantResolverModule`):
+**Trade-off:** the concrete-rebinds-everything pattern means each tenant module declares the full set of `@TenantKey` bindings — a bit more boilerplate than chain-walking, but no custom resolver and no surprises at runtime. Recommended for v1; revisit if tenant count grows past ~10.
+
+### The resolver in `:app`
+
+`:app` provides one resolver per `:core` policy interface — each picks the active impl from the multibindings map by `TenantContext.id.value`:
 
 ```kotlin
 // :app/di/TenantResolverModule.kt
@@ -278,67 +323,77 @@ Resolver in `:app` (mirrors `VariantResolverModule`):
 object TenantResolverModule {
 
     @Provides @LoggedInScoped
+    fun otpDeliveryPolicy(
+        tenant: TenantContext,
+        all: Map<String, @JvmSuppressWildcards OtpDeliveryPolicy>,
+    ): OtpDeliveryPolicy = checkNotNull(all[tenant.id.value]) {
+        "No OtpDeliveryPolicy registered for tenant ${tenant.id}"
+    }
+
+    @Provides @LoggedInScoped
     fun approvalLineRenderer(
         tenant: TenantContext,
         all: Map<String, @JvmSuppressWildcards ApprovalLineRenderer>,
-    ): ApprovalLineRenderer = all[tenant.id.value]
-        ?: all["default"]
-        ?: error("No ApprovalLineRenderer registered, not even 'default'")
+    ): ApprovalLineRenderer = checkNotNull(all[tenant.id.value]) {
+        "No ApprovalLineRenderer registered for tenant ${tenant.id}"
+    }
+
+    // … one provider per :core policy interface (mechanical; ~10 entries)
 }
 ```
 
-Note the **`default` fallback** — every variant ships a `default` tenant impl. New tenants with no special structural needs simply get the default impl by not appearing in the map.
+The map lookup is the **single point of dispatch** in the codebase — no `when (tenant.id)` branching anywhere else.
 
 For non-structural (flag/param) differences, **no Hilt entry is needed** — the `TenantContext` itself is injected into the VM directly.
 
 ---
 
-## 9. Worked example: BizPlay's 11 customers under `:variants-kr`
+## 9. Worked example: BizPlay's 11 customers under `:tenants:korea:*`
 
 Mapping the BizPlay antipattern (`DetailConfig.isXxx()`) to Compass's tenant model:
 
 | BizPlay predicate | Compass shape | Where it lives |
 |---|---|---|
-| `isPOSCO_ICT()` → use BZP_TRIP receipt type | `flags.usesTripExpenseFlow = true` | `posco_ict/PoscoIctTenantProfile.kt` |
-| `isNIA()` → hide employee ID, mask ID number | `flags.hidesEmployeeId = true`, `flags.requiresIdNumberCapture = true` | `nia/NiaTenantProfile.kt` |
-| `isWIPS()` → clear `ID_NUMBER` on approval | `flags.clearsEmployeeNumberOnApproval = true` | `wips/WipsTenantProfile.kt` |
-| `isShinsegae()` → different approval line shape | Structural — `ShinsegaeApprovalLineRenderer` | `shinsegae/` |
-| `isLotte()` → photo list / receipt detail tweaks | `flags.usesLotteReceiptStyle = true` (or a structural renderer) | `lotte/LotteTenantProfile.kt` |
-| `isITCen()` → minor UI tweaks | `flags.*` as needed | `itcen/ItcenTenantProfile.kt` |
+| `isPOSCO_ICT()` → use BZP_TRIP receipt type | `flags.usesTripExpenseFlow = true` | `:tenants:korea:posco-ict/flags/PoscoIctTenantProfile.kt` |
+| `isNIA()` → hide employee ID, mask ID number | `flags.hidesEmployeeId = true`, `flags.requiresIdNumberCapture = true` | `:tenants:korea:nia/flags/NiaTenantProfile.kt` |
+| `isWIPS()` → clear `ID_NUMBER` on approval | `flags.clearsEmployeeNumberOnApproval = true` | `:tenants:korea:wips/flags/WipsTenantProfile.kt` |
+| `isShinsegae()` → different approval line shape | Structural — `ShinsegaeApprovalLineRenderer` | `:tenants:korea:shinsegae/policy/` |
+| `isLotte()` → photo list / receipt detail tweaks | `flags.usesLotteReceiptStyle = true` (or a structural renderer) | `:tenants:korea:lotte/` |
+| `isITCen()` → minor UI tweaks | `flags.*` as needed | `:tenants:korea:itcen/` |
 | `isChilsungBeverage()` → BSNN-NO-based detection | (Same as Lotte; child of Lotte's flags) | folded into `lotte/` |
-| `isHANA()` → `allowsPasswordResetInApp = true` | `flags.allowsPasswordResetInApp = true` | `hana/HanaTenantProfile.kt` |
-| `isIBS()` | One small flag | `ibs/IbsTenantProfile.kt` |
-| `isSPC()` | Capability flag | `spc/SpcTenantProfile.kt` |
-| `isPOSTGRES()` | Test-env naming; **not a tenant** — it's an environment variant | (Drop entirely; use `BuildConfig.MG_URL` per buildType — see [11 § 3](11-mg-and-runtime-config.md)) |
+| `isHANA()` → `allowsPasswordResetInApp = true` | `flags.allowsPasswordResetInApp = true` | `:tenants:korea:hana/` |
+| `isIBS()` | One small flag | `:tenants:korea:ibs/` |
+| `isSPC()` | Capability flag | `:tenants:korea:spc/` |
+| `isPOSTGRES()` | Test-env naming; **not a tenant** — it's a buildType | (Drop entirely; use `BuildConfig.MG_URL` per buildType — see [11 § 3](11-mg-and-runtime-config.md)) |
 
 **124 call sites of `DetailConfig.isXxx()` collapse to:**
 
 - ~5 named fields in `TenantFlags`
 - ~3 named fields in `TenantParams`
-- 1 structural policy (`ApprovalLineRenderer`) with 2 impls (default + Shinsegae)
+- 1 structural policy (`ApprovalLineRenderer`) with 2 impls (default + Shinsegae) bound at the concrete-tenant layer
 - 10 `TenantProfile` factories (one per tenant, each ~10–30 lines)
 
 Zero `if (tenant.id == "…")` branches anywhere in `:features`.
 
 ---
 
-## 10. Onboarding a tenant — vs onboarding a variant
+## 10. Onboarding cost
 
-| Action | Onboarding a **variant** | Onboarding a **tenant** |
+| Action | New **region** (e.g., add Vietnam) | New **tenant in existing region** (e.g., add `lotte` to Korea) |
 |---|---|---|
-| New module | ✓ `:variants-{region}` | ✗ |
-| New `tenants/` subfolder | (n/a) | ✓ `:variants-{region}/tenants/{id}/` |
-| `TenantProfile` factory | (n/a) | ✓ (~10–30 lines) |
-| Hilt `@VariantKey` bindings | ✓ (full policy set) | ✗ unless structural |
-| Hilt `@TenantKey` bindings | (n/a) | ✓ only if a `TenantPolicy` interface is involved |
-| `settings.gradle.kts` change | ✓ `include(":variants-{region}")` | ✗ |
-| `VariantCatalogue` entry | ✓ | ✗ |
-| `TenantCatalogue` entry | (n/a) | ✓ — one line: `TenantId("nia") to ::niaProfile` |
+| New region-base module (`:tenants:{region}:base/`) | ✓ | ✗ |
+| New region `default` tenant module | ✓ | ✗ |
+| New concrete tenant module | ✓ (the first one) | ✓ |
+| Region-baseline policies (currency, regulator rules, calendar) | ✓ (full set in base) | reuse from base |
+| `TenantProfile` factory | ✓ (default + concrete) | ✓ (~10–30 lines) |
+| Hilt `@TenantKey` bindings | ✓ (full policy set per concrete tenant) | ✓ (full policy set, reusing base classes) |
+| `settings.gradle.kts` change | ✓ `include(":tenants:vietnam:base")`, `:default`, plus concrete tenants | ✓ `include(":tenants:korea:lotte")` |
+| `TenantCatalogue` entry | ✓ (one per concrete tenant in the new region) | ✓ (one line: `TenantId("korea:lotte") to ::lotteProfile`) |
 | `:features` change | ✗ | ✗ |
 | `:data` change | ✗ | ✗ |
-| `:core` change | only if adding a new variant-level policy interface | only if adding a new flag, param, or `TenantPolicy` |
+| `:core` change | only if adding a new policy interface | only if adding a new flag, param, or `TenantPolicy` |
 
-A tenant is strictly more lightweight than a variant. The framework should make tenant onboarding **a single PR per tenant** — usually three files: the `TenantProfile`, the catalogue entry, and a possibly-empty `:variants-{region}/tenants/{id}/` subfolder.
+A concrete tenant is **a single PR**: the module folder, the Hilt module, the `TenantProfile`, the catalogue entry. See [13 — Onboarding a Tenant](13-onboarding-a-variant.md).
 
 ---
 
@@ -347,38 +402,52 @@ A tenant is strictly more lightweight than a variant. The framework should make 
 | ❌ Don't model as a tenant | ✅ Goes in |
 |---|---|
 | A different environment (prod vs staging) | `BuildConfig.MG_URL` per buildType (see [11 § 3](11-mg-and-runtime-config.md)) |
-| A different regulator | New `:variants-{region}` module |
-| A different currency / rail | New `:variants-{region}` module |
 | A user's individual settings (notification prefs) | User-scoped prefs (`PreferenceDelegator`-equivalent) on `Session` |
 | A user's role inside an org (admin vs member) | Permission set on `UserSession` |
 | A subaccount inside an org | `DepartmentAccount` — see [12](12-departments-and-session.md) |
 | A Play Store reviewer flag | `RuntimeConfig.storeReviewMode` — see [11 § 6.5](11-mg-and-runtime-config.md) |
 | A non-released feature being A/B tested | Feature-flag system (Firebase Remote Config); not MG, not tenant |
+| "What region does this user live in" | `TenantContext.regionCode` — informational only, never branch on it |
 
 If a difference is **temporary** (rollout, kill switch, experiment), it is **not a tenant** — tenants are stable organizational identities. The other mechanisms exist for the temporary cases.
 
 ---
 
-## 12. Hard invariants
+## 12. Why was the variant axis collapsed?
 
-These extend the invariants in CLAUDE.md.
+Earlier iterations of this framework documented two parallel DI axes — `VariantContext` (region) and `TenantContext` (org-in-region). The two-axis model was load-bearing when consuming apps were expected to host multiple regions in a single APK. In practice:
 
-1. **`TenantContext` is immutable for the session.** Tenant change requires logout. Same rule as `VariantContext`.
-2. **`:features` reads tenant fields, never `tenant.id`.** Branching on `tenant.id` is the same antipattern as branching on `variantId`. Use flags, params, or structural `TenantPolicy`.
-3. **Tenant flags are server-sourced.** The client owns the *schema*; the server owns the *values*. No hardcoded per-tenant flag tables in the client.
-4. **Tenants live inside variants.** No `:tenants-{id}` sibling modules. A multi-region customer has separate tenant entries per variant.
-5. **Every variant has a `default` tenant.** Single-tenant variants still ship a `default` profile. This keeps the `TenantContext` field on `Session` non-nullable.
-6. **`TenantFlags` and `TenantParams` use named, typed fields.** No `Map<String, Any>` backdoors.
-7. **`POSTGRES` is not a tenant.** Environments are buildTypes, not tenants.
+- The framework's consuming apps are per-product, with one region per app in the realistic case.
+- Where multi-tenant was useful, the same tenant-org was almost never identical across regions — splitting them as `(region, tenant)` pairs created composite keys (`cambodia:nh`, `korea:nh`) that were structurally separate from each other anyway.
+- The two-axis model required two resolvers, two map keys, two `Catalogue` types, two onboarding flows, and two sets of forbidden-import rules.
+- The compile-time-enforced regional grouping (which tenants share KR policies) is just as reliable when expressed as a Gradle module dependency: if a concrete tenant module forgets to declare its `:tenants:{region}:base` dependency, Hilt fails to resolve the regional policies at boot. Fail-fast at boot, not at runtime.
+
+The collapsed single-axis model preserves every load-bearing property of the original (no `if (id == ...)` branching, single point of dispatch, additive onboarding, the `default` tenant per region) and removes ~30% of the architectural surface.
 
 ---
 
-## 13. Cross-references
+## 13. Hard invariants
 
-- The variant module shape this nests inside: [07 — `:variants-*`](07-variants.md)
+These extend the invariants in CLAUDE.md.
+
+1. **`TenantContext` is immutable for the session.** Tenant change requires logout.
+2. **`:features` reads tenant fields, never `tenant.id` or `tenant.regionCode`.** Branching on either is the antipattern this whole model is designed to eliminate. Use flags, params, or structural `TenantPolicy`.
+3. **Tenant flags are server-sourced.** The client owns the *schema*; the server owns the *values*. No hardcoded per-tenant flag tables in the client.
+4. **Tenants live inside region directories.** A multi-region customer has separate tenant entries per region (`:tenants:cambodia:nh` and `:tenants:korea:nh` are independent modules).
+5. **Every region has a `:tenants:{region}:default` module.** Single-tenant regions still ship a `default` tenant. This keeps the `TenantContext` field on `Session` non-nullable in tests and makes "the no-overrides baseline" a real testable target.
+6. **`TenantFlags` and `TenantParams` use named, typed fields.** No `Map<String, Any>` backdoors.
+7. **Concrete tenant modules declare Gradle dependency on their region base.** Hilt resolution of regional policies depends on the base being on the classpath.
+8. **`TenantId.value` is a composite `<region>:<tenantSlug>`.** Same slug under different regions are independent tenants with separate bindings.
+9. **Environments are buildTypes, not tenants.** "POSTGRES", "staging", "prod" are not tenants.
+
+---
+
+## 14. Cross-references
+
+- The module structure for tenants and region bases: [07 — Tenants and Region Bases](07-variants.md)
 - The `:core` contracts layer where `TenantContext` / `TenantFlags` / `TenantParams` live: [03 — `:core`](03-core.md)
 - The login boot phase that resolves the tenant: [10 — Boot Phases](10-boot-phases.md)
-- The `LoggedInComponent` that holds both `VariantContext` and `TenantContext`: [10 — Boot Phases](10-boot-phases.md)
-- The `Session.activeAccountId` (third axis, see §1): [12 — Departments and Session](12-departments-and-session.md)
-- Onboarding a brand-new region: [13 — Onboarding a Variant](13-onboarding-a-variant.md)
+- The `LoggedInComponent` that holds `TenantContext`: [10 — Boot Phases](10-boot-phases.md)
+- The `Session.activeAccountId` (the account axis): [12 — Departments and Session](12-departments-and-session.md)
+- Onboarding a tenant or region: [13 — Onboarding a Tenant](13-onboarding-a-variant.md)
 - The store-review-mode mechanism (NOT a tenant): [11 — MG and Runtime Config § 6.5](11-mg-and-runtime-config.md)

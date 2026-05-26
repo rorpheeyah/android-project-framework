@@ -13,8 +13,8 @@ A build should pay cost proportional to **what changed**, not to **how big the p
 | Edit one Composable in `:features/transfer/input/` | Recompile that file + dependents only |
 | Add one new feature folder under `:features/` | Compile the new files; no Gradle reconfiguration cost |
 | Add a method to `FintechApi` in `:data` | Recompile `:data`, `:app` |
-| Add a new variant module | Compile the new module; **`:features` and `:data` must not recompile** |
-| Bump `:aos-core` (network change) | Recompile `:core`, `:data`, `:features`, `:variants-*`, `:app` (unavoidable; mitigated by submodule discipline) |
+| Add a new tenant module | Compile the new module; **`:features` and `:data` must not recompile** |
+| Bump `:aos-sdk` (network change) | Recompile `:core`, `:data`, `:features`, `:tenants:*:*`, `:app` (unavoidable; mitigated by submodule discipline) |
 
 The hostile failure mode is **"clean build to debug an unrelated issue"** — if devs feel the need to do this regularly, build perf has degraded.
 
@@ -59,18 +59,18 @@ The threshold is roughly: *"does adding this feature to `:features` slow increme
 | API change happens | Recompile triggers |
 |---|---|
 | With `:data` separate | `:data`, `:app` |
-| If `:data` were merged into `:core` | `:core`, `:data` *(if it remained)*, `:features`, every `:variants-*`, `:app` |
+| If `:data` were merged into `:core` | `:core`, `:data` *(if it remained)*, `:features`, every `:tenants:*:*`, `:app` |
 
 For a fintech app where the API changes weekly, this saves real developer time.
 
 ---
 
-## 4. Why `:variants-*` Are Real Modules
+## 4. Why `:tenants:*:*` Are Real Modules (Not Packages)
 
 Variant modules **must** be separate Gradle modules — not packages — for two reasons that have nothing to do with build perf:
 
 1. **Dependency isolation:** the build graph itself is what enforces "variant A cannot import variant B". This is impossible at the package level; Kotlin's `internal` visibility is module-scoped, so packages inside one module can see each other.
-2. **Independent test runs:** `./gradlew :variants-kh:test` runs only KH tests. Critical when teams own different release cadences.
+2. **Independent test runs:** `./gradlew :tenants:cambodia:nh:test` runs only KH tests. Critical when teams own different release cadences.
 
 The build perf cost (per-variant Gradle config overhead × N variants) is **acceptable** because:
 
@@ -145,12 +145,12 @@ Reviewing a PR that adds a new feature folder under `:features/`. The build syst
 
 | Module | Recompile triggered? |
 |---|---|
-| `:aos-core` | No |
+| `:aos-sdk` | No |
 | `:core` | No |
 | `:data` | No |
 | `:features` | Yes — but **only the new files** + anything that imports them |
 | `:features-chatbot` | No |
-| `:variants-*` | No |
+| `:tenants:*:*` | No |
 | `:app` | Yes — `:app` always recompiles when its dependency `:features` does |
 
 Use `./gradlew :app:assembleDebug --info` to verify. If unrelated `:features` files are recompiling, suspect:
@@ -163,20 +163,20 @@ Use `./gradlew :app:assembleDebug --info` to verify. If unrelated `:features` fi
 
 ## 8. The "Adding a new variant module" Test
 
-Reviewing a PR that adds `:variants-my`. The build system should react with:
+Reviewing a PR that adds `:tenants:vietnam:nh`. The build system should react with:
 
 | Module | Recompile triggered? |
 |---|---|
-| `:aos-core` | No |
+| `:aos-sdk` | No |
 | `:core` | No |
 | `:data` | No |
 | `:features` | **No** — this is the architectural promise |
 | `:features-chatbot` | No |
-| Other `:variants-*` | No |
+| Other `:tenants:*:*` | No |
 | `:app` | Yes (new dependency, new catalogue entry) |
-| `:variants-my` | Yes (it's new) |
+| `:tenants:vietnam:nh` | Yes (it's new) |
 
-If `:features` or `:data` recompiles after a variant-only change, the topology has been violated. Inspect their `build.gradle.kts` for an accidental `implementation(project(":variants-my"))`.
+If `:features` or `:data` recompiles after a tenant-only change, the topology has been violated. Inspect their `build.gradle.kts` for an accidental `implementation(project(":tenants:vietnam:nh"))`.
 
 ---
 
@@ -196,6 +196,6 @@ Discipline that pays compounding returns:
 ## 10. Cross-references
 
 - The Hybrid-Monolith design rationale: [06 — `:features`](06-features.md)
-- Variant module shape and dependency rules: [07 — `:variants-*`](07-variants.md)
+- Tenant module shape and dependency rules: [07 — `:tenants:*`](07-variants.md)
 - Why `:data` is separate from `:core`: [05 — `:data`](05-data.md)
 - The dependency DAG: [01 — Module Topology](01-module-topology.md)

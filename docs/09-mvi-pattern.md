@@ -65,27 +65,29 @@ Notes:
 Each screen owns a `*Contract.kt` defining its three sealed types co-located with the screen:
 
 ```kotlin
-// :features/transfer/input/TransferInputContract.kt
+// :features/loan/apply/LoanApplyContract.kt
 
-internal data class TransferInputState(
+internal data class LoanApplyState(
     val amount: String = "",
-    val beneficiaryName: String? = null,
-    val feeQuote: FeeQuote? = null,
+    val termMonths: Int = 12,
+    val purpose: String = "",
+    val estimatedInstallment: Installment? = null,
     val validation: ValidationState = ValidationState.Idle,
-    val showQrScanner: Boolean = false,        // gated on VariantCapabilities at init
+    val showGuarantorSection: Boolean = false,   // gated on TenantCapabilities at init
     val isSubmitting: Boolean = false,
 ) : UiState
 
-internal sealed interface TransferInputEvent : UiEvent {
-    data class AmountChanged(val raw: String) : TransferInputEvent
-    data class BeneficiaryScanned(val payload: String) : TransferInputEvent
-    object SubmitClicked : TransferInputEvent
-    object DismissError : TransferInputEvent
+internal sealed interface LoanApplyEvent : UiEvent {
+    data class AmountChanged(val raw: String) : LoanApplyEvent
+    data class TermChanged(val months: Int) : LoanApplyEvent
+    data class PurposeChanged(val text: String) : LoanApplyEvent
+    object SubmitClicked : LoanApplyEvent
+    object DismissError : LoanApplyEvent
 }
 
-internal sealed interface TransferInputEffect : UiEffect {
-    data class NavigateToReview(val intent: TransferIntent) : TransferInputEffect
-    data class ShowError(val message: String) : TransferInputEffect
+internal sealed interface LoanApplyEffect : UiEffect {
+    data class NavigateToReview(val application: LoanApplication) : LoanApplyEffect
+    data class ShowError(val message: String) : LoanApplyEffect
 }
 ```
 
@@ -95,33 +97,42 @@ internal sealed interface TransferInputEffect : UiEffect {
 
 ```kotlin
 @HiltViewModel
-internal class TransferInputViewModel @Inject constructor(
-    private val transferRepo: TransferRepository,        // :core interface, impl from :data
-    private val amountPolicy: TransferAmountPolicy,      // :core interface, impl from :variants-*
-    capabilities: VariantCapabilities,                   // :core interface, impl from :variants-*
-) : MviViewModel<TransferInputState, TransferInputEvent, TransferInputEffect>(
-    initial = TransferInputState(showQrScanner = capabilities.supportsKhqrScan()),
+internal class LoanApplyViewModel @Inject constructor(
+    private val applicationRepo: LoanApplicationRepository,    // :core interface, impl from :data
+    private val eligibility: LoanEligibilityPolicy,            // :core interface, impl from :tenants:*:*
+    private val emiCalculator: EmiCalculator,                  // :core interface, impl from :tenants:*:*
+    capabilities: TenantCapabilities,                          // :core interface, impl from :tenants:*:*
+) : MviViewModel<LoanApplyState, LoanApplyEvent, LoanApplyEffect>(
+    initial = LoanApplyState(showGuarantorSection = capabilities.requiresGuarantor()),
 ) {
 
-    override fun onEvent(event: TransferInputEvent) = when (event) {
-        is TransferInputEvent.AmountChanged    -> onAmountChanged(event.raw)
-        is TransferInputEvent.BeneficiaryScanned -> resolveBeneficiary(event.payload)
-        TransferInputEvent.SubmitClicked       -> submit()
-        TransferInputEvent.DismissError        -> setState { copy(validation = ValidationState.Idle) }
+    override fun onEvent(event: LoanApplyEvent) = when (event) {
+        is LoanApplyEvent.AmountChanged    -> onAmountChanged(event.raw)
+        is LoanApplyEvent.TermChanged      -> onTermChanged(event.months)
+        is LoanApplyEvent.PurposeChanged   -> setState { copy(purpose = event.text) }
+        LoanApplyEvent.SubmitClicked       -> submit()
+        LoanApplyEvent.DismissError        -> setState { copy(validation = ValidationState.Idle) }
     }
 
     private fun onAmountChanged(raw: String) {
         val parsed = Money.parseOrNull(raw)
-        val validation = parsed?.let(amountPolicy::validate) ?: ValidationState.Idle
-        setState { copy(amount = raw, validation = validation) }
+        val validation = parsed?.let { eligibility.validateRequestedAmount(it) } ?: ValidationState.Idle
+        val emi = parsed?.let { emiCalculator.compute(it, state.value.termMonths, state.value.annualRate) }
+        setState { copy(amount = raw, validation = validation, estimatedInstallment = emi) }
+    }
+
+    private fun onTermChanged(months: Int) {
+        val parsed = Money.parseOrNull(state.value.amount)
+        val emi = parsed?.let { emiCalculator.compute(it, months, state.value.annualRate) }
+        setState { copy(termMonths = months, estimatedInstallment = emi) }
     }
 
     private fun submit() = viewModelScope.launch {
         setState { copy(isSubmitting = true) }
-        val intent = currentIntentOrNull() ?: return@launch
-        transferRepo.submit(intent)
-            .onSuccess { emitEffect(TransferInputEffect.NavigateToReview(intent)) }
-            .onFailure { emitEffect(TransferInputEffect.ShowError(it.userMessage())) }
+        val application = currentApplicationOrNull() ?: return@launch
+        applicationRepo.submit(application)
+            .onSuccess { emitEffect(LoanApplyEffect.NavigateToReview(application)) }
+            .onFailure { emitEffect(LoanApplyEffect.ShowError(it.userMessage())) }
         setState { copy(isSubmitting = false) }
     }
 }
@@ -129,10 +140,10 @@ internal class TransferInputViewModel @Inject constructor(
 
 The ViewModel:
 
-- Holds **only `:core` interfaces** as dependencies. Never a concrete `:data` repo or `:variants-*` policy class.
+- Holds **only `:core` interfaces** as dependencies. Never a concrete `:data` repo or `:tenants:*:*` policy class.
 - Uses `setState { … }` for state changes; `emitEffect(…)` for one-shot side effects.
 - Returns `Unit` from `onEvent` via the exhaustive `when` — each event maps to exactly one branch.
-- Reads variant capabilities at construction and stores derived booleans in `UiState` — the rendered Composable never sees `VariantCapabilities` directly.
+- Reads tenant capabilities at construction and stores derived booleans in `UiState` — the rendered Composable never sees `TenantCapabilities` directly.
 
 ---
 
@@ -140,9 +151,9 @@ The ViewModel:
 
 ```kotlin
 @Composable
-internal fun TransferInputScreen(
-    viewModel: TransferInputViewModel = hiltViewModel(),
-    navigateToReview: (TransferIntent) -> Unit,
+internal fun LoanApplyScreen(
+    viewModel: LoanApplyViewModel = hiltViewModel(),
+    navigateToReview: (LoanApplication) -> Unit,
     showError: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -150,25 +161,25 @@ internal fun TransferInputScreen(
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is TransferInputEffect.NavigateToReview -> navigateToReview(effect.intent)
-                is TransferInputEffect.ShowError        -> showError(effect.message)
+                is LoanApplyEffect.NavigateToReview -> navigateToReview(effect.application)
+                is LoanApplyEffect.ShowError        -> showError(effect.message)
             }
         }
     }
 
-    TransferInputContent(
+    LoanApplyContent(
         state = state,
         onEvent = viewModel::onEvent,
     )
 }
 
 @Composable
-private fun TransferInputContent(
-    state: TransferInputState,
-    onEvent: (TransferInputEvent) -> Unit,
+private fun LoanApplyContent(
+    state: LoanApplyState,
+    onEvent: (LoanApplyEvent) -> Unit,
 ) {
     // Pure rendering of state. Composable-preview-friendly.
-    if (state.showQrScanner) QrScannerButton(onClick = { /* ... */ })
+    if (state.showGuarantorSection) GuarantorSection(onClick = { /* ... */ })
 }
 ```
 
@@ -187,8 +198,8 @@ Splitting `Screen` (stateful) from `Content` (stateless) gives:
 | What's currently shown on screen | One-shot navigation commands |
 | Form input values | Toast/snackbar messages already shown |
 | Loading/empty/error indicators | `Throwable` instances |
-| Capability-derived booleans (e.g. `showQrScanner`) | Concrete `:variants-*` types |
-| Selected items, expanded sections | The `VariantId` (UI never branches on it) |
+| Capability-derived booleans (e.g. `showGuarantorSection`) | Concrete `:tenants:*:*` types |
+| Selected items, expanded sections | The `TenantId` (UI never branches on it) |
 | Cached data being displayed | Live `Flow`s — collect them into state instead |
 
 If state would change "the same way" twice in a row and you'd want both events delivered, it's an **effect**, not state. Errors are the canonical example: showing the same error twice should produce two snackbars, not one suppressed change.
@@ -197,9 +208,9 @@ If state would change "the same way" twice in a row and you'd want both events d
 
 ## 7. Why MVI Specifically
 
-Banking flows have two properties that MVI handles cleanly and other patterns don't:
+Lending flows have two properties that MVI handles cleanly and other patterns don't:
 
-1. **Multi-step transfer flows have implicit state machines** (Input → Review → Authorize → Result). MVI's single-state-per-screen forces these transitions to be explicit and reviewable.
+1. **Multi-step loan-application flows have implicit state machines** (Quick info → Branch → Documents → Guarantor → Review → Submit). MVI's single-state-per-screen forces these transitions to be explicit and reviewable. Same applies to repayment and payoff flows.
 2. **One-shot effects must not be replayed on rotation** (a navigation command shouldn't re-fire when the user rotates the device). MVI's effect channel handles this naturally; a state-only model has to special-case it.
 
 The cost — boilerplate per screen — is mitigated by the `MviViewModel` base class.
@@ -210,4 +221,4 @@ The cost — boilerplate per screen — is mitigated by the `MviViewModel` base 
 
 - Where the base contracts live: [03 — `:core`](03-core.md) (`mvi/` package)
 - How state is cleared on logout: [10 — Boot Phases](10-boot-phases.md)
-- The `:core` policy interfaces ViewModels inject: [03](03-core.md) and [07](07-variants.md)
+- The `:core` policy interfaces ViewModels inject: [03](03-core.md) and [07](07-variants.md) (tenant policies)
